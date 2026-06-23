@@ -46,6 +46,7 @@ describe('AntigravityRunner', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     process.env = { ...originalEnv };
+    delete process.env.ANTIGRAVITY_PRINT_TIMEOUT;
   });
 
   afterEach(() => {
@@ -82,7 +83,16 @@ describe('AntigravityRunner', () => {
 
     expect(command).toBe('agy');
     expect(args).toContain('--dangerously-skip-permissions');
+    expect(args[args.indexOf('--print-timeout') + 1]).toBe('5m');
     expect(args).toContain('-p');
+  });
+
+  it('allows overriding the Antigravity print timeout', async () => {
+    process.env.ANTIGRAVITY_PRINT_TIMEOUT = '30s';
+    const runner = new AntigravityRunner({});
+    const { args } = await getSpawnArgs(runner, 'run');
+
+    expect(args[args.indexOf('--print-timeout') + 1]).toBe('30s');
   });
 
   it('includes model, cwd, and conversation args', async () => {
@@ -147,6 +157,21 @@ describe('AntigravityRunner', () => {
     mockProcess.emit('close', 0);
 
     await expect(promise).rejects.toThrow('Antigravity CLI returned no output');
+  });
+
+  it('includes stderr details when Antigravity exits successfully without output', async () => {
+    const { getMockProcess } = await import('child_process');
+    const runner = new AntigravityRunner({});
+
+    const promise = runner.run('hello');
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    const mockProcess = (getMockProcess as () => any)();
+    mockProcess.stderr.emit('data', Buffer.from('print mode timed out after 30s\n'));
+    mockProcess.emit('close', 0);
+
+    await expect(promise).rejects.toThrow(
+      'Antigravity CLI returned no output: print mode timed out after 30s'
+    );
   });
 
   it('infers sessionId from a newly created Antigravity conversation database', async () => {
