@@ -36,10 +36,12 @@ export class AntigravityRunner extends CliRunnerBase {
   protected readonly logPrefix = 'antigravity';
 
   private systemPrompt: string;
+  private readonly printTimeout: string;
 
   constructor(options?: AntigravityOptions) {
     super(options);
     this.systemPrompt = buildSystemPrompt(options?.platform);
+    this.printTimeout = process.env.ANTIGRAVITY_PRINT_TIMEOUT || '5m';
   }
 
   private buildArgs(prompt: string, options?: RunOptions): string[] {
@@ -58,8 +60,23 @@ export class AntigravityRunner extends CliRunnerBase {
       args.push('--conversation', options.sessionId);
     }
 
+    args.push('--print-timeout', this.printTimeout);
     args.push('-p', prompt);
     return args;
+  }
+
+  private async collectAntigravityOutput(
+    args: string[],
+    channelId: string | undefined
+  ): Promise<{ stdout: string; stderr: string }> {
+    let stderr = '';
+    const stdout = await this.collectOutput(args, channelId, {
+      encoding: 'utf8',
+      onStderr: (output) => {
+        stderr = output;
+      },
+    });
+    return { stdout, stderr };
   }
 
   private buildFullPrompt(rawPrompt: string): string {
@@ -88,7 +105,7 @@ export class AntigravityRunner extends CliRunnerBase {
       logPrompt(this.workdir, options.appSessionId, fullPrompt);
     }
 
-    const stdout = await this.collectOutput(args, options?.channelId, { encoding: 'utf8' });
+    const { stdout, stderr } = await this.collectAntigravityOutput(args, options?.channelId);
     const response = this.parseResponse(stdout);
     const result = this.extractText(response) || stdout.trim();
     const sessionId =
@@ -99,8 +116,11 @@ export class AntigravityRunner extends CliRunnerBase {
     }
 
     if (!result) {
+      const detail = stderr.trim();
       throw new Error(
-        'Antigravity CLI returned no output. Check ~/.gemini/antigravity-cli/log/ for quota, auth, or model errors.'
+        detail
+          ? `Antigravity CLI returned no output: ${detail}`
+          : 'Antigravity CLI returned no output. Check ~/.gemini/antigravity-cli/log/ for quota, auth, or model errors.'
       );
     }
 

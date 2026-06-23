@@ -1122,7 +1122,9 @@ When `SKIP_PERMISSIONS=true` (the default), xangi passes `--always-approve` to a
 
 The Antigravity backend uses Google's `agy` command. Install it with `curl -fsSL https://antigravity.google/cli/install.sh | bash` and complete the first-run `agy` authentication flow.
 
-Non-interactive execution uses `agy -p ...`. xangi passes `--model` when `AGENT_MODEL` is set and `--conversation` when a provider session id is available.
+Non-interactive execution uses `agy --print-timeout <timeout> -p ...`. Set `ANTIGRAVITY_PRINT_TIMEOUT` (default: `5m`) to control agy's own print-mode timeout. xangi passes `--model` when `AGENT_MODEL` is set and `--conversation` when a provider session id is available.
+
+If agy exits successfully with empty stdout, xangi surfaces timeout, quota, authentication, or other details written to stderr as the error message.
 
 When `SKIP_PERMISSIONS=true` (the default), xangi passes `--dangerously-skip-permissions` to avoid blocking on permission prompts in non-interactive chat operation. Use this only for trusted personal workspaces.
 
