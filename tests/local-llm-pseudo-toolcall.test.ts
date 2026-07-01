@@ -285,6 +285,24 @@ describe('isSafeForRescue', () => {
     expect(isSafeForRescue('exec', { command: 'xangi-cmd web_history --count 10' }).safe).toBe(true);
   });
 
+  it('slack_search は safe (read-only tool list)', () => {
+    expect(isSafeForRescue('slack_search', { channel: 'C123', keyword: 'PR' }).safe).toBe(true);
+  });
+
+  it('exec で xangi-cmd slack_channels は safe (allowlist)', () => {
+    expect(isSafeForRescue('exec', { command: 'xangi-cmd slack_channels --limit 20' }).safe).toBe(
+      true
+    );
+  });
+
+  it('exec で xangi-cmd slack_send は unsafe (副作用あり、allowlist 外)', () => {
+    const check = isSafeForRescue('exec', {
+      command: 'xangi-cmd slack_send --channel C123 --message hi',
+    });
+    expect(check.safe).toBe(false);
+    expect(check.reason).toContain('allowlist');
+  });
+
   it('exec で xangi-cmd schedule_remove は unsafe (副作用あり、allowlist 外)', () => {
     const check = isSafeForRescue('exec', { command: 'xangi-cmd schedule_remove --id foo' });
     expect(check.safe).toBe(false);

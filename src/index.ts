@@ -27,6 +27,7 @@ import {
 import { registerDiscordMessageHandlers } from './discord/message-handler.js';
 import { finalizeActiveStreams } from './stream-finalizer.js';
 import { registerDiscordSchedulerBridge } from './discord/scheduler-bridge.js';
+import { runShutdownCleanup } from './shutdown.js';
 dotenvConfig({ override: true });
 
 /**
@@ -364,25 +365,13 @@ async function main() {
   scheduler.startAll(config.scheduler);
 
   // シャットダウン時にスケジューラを停止し、dataDir ロックを解放
-  const shutdown = async () => {
-    console.log('[xangi] Shutting down scheduler...');
-    scheduler.stopAll();
-    // 実行中のストリーミング表示を「中断」表示で確定させる (issue #293)。
-    // pm2 の kill timeout (デフォルト 1600ms) 内で完了するよう内部で打ち切る
-    try {
-      await finalizeActiveStreams();
-    } catch {
-      // 後始末失敗で shutdown を阻害しない
-    }
-    if (releaseDataDirLock) {
-      try {
-        await releaseDataDirLock();
-      } catch {
-        // 解放に失敗しても次起動時に stale 検出で回収される
-      }
-    }
-    process.exit(0);
-  };
+  const shutdown = () =>
+    runShutdownCleanup({
+      stopScheduler: () => scheduler.stopAll(),
+      finalizeActiveStreams,
+      releaseDataDirLock,
+      exit: (code) => process.exit(code),
+    });
   process.on('SIGINT', shutdown);
   process.on('SIGTERM', shutdown);
 }

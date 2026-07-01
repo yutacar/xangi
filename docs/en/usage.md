@@ -11,7 +11,7 @@ Detailed usage guide for xangi.
 - [Timestamp Injection](#timestamp-injection)
 - [Session Management](#session-management)
 - [Scheduler](#scheduler)
-- [Discord Operations (xangi-cmd)](#discord-operations-xangi-cmd)
+- [Chat Operations (xangi-cmd)](#chat-operations-xangi-cmd)
 - [Event Trigger](#event-trigger)
 - [Runtime Settings](#runtime-settings)
 - [Autonomous AI Operations](#autonomous-ai-operations)
@@ -200,9 +200,9 @@ Schedule data is saved in `${DATA_DIR}/schedules.json`.
 - Default: `/workspace/.xangi/schedules.json`
 - Configurable via the `DATA_DIR` environment variable
 
-## Discord Operations (xangi-cmd)
+## Chat Operations (xangi-cmd)
 
-The AI performs Discord operations via the `xangi-cmd` CLI tool. Because it routes through xangi's built-in tool-server (HTTP API), secrets like `DISCORD_TOKEN` are never accessible to the AI CLI.
+The AI performs Discord / Slack operations via the `xangi-cmd` CLI tool. Because it routes through xangi's built-in tool-server (HTTP API), secrets like `DISCORD_TOKEN` / `SLACK_BOT_TOKEN` are never accessible to the AI CLI.
 
 | Command | Description |
 | --- | --- |
@@ -215,6 +215,11 @@ The AI performs Discord operations via the `xangi-cmd` CLI tool. Because it rout
 | `xangi-cmd discord_edit --channel <ID> --message-id <ID> --content "text"` | Edit a message |
 | `xangi-cmd discord_delete --channel <ID> --message-id <ID>` | Delete a message |
 | `xangi-cmd media_send --channel <ID> --file /path/to/file` | Send a file |
+| `xangi-cmd slack_send --channel <id> --message "text" [--thread-ts <ts>]` | Send a Slack message |
+| `xangi-cmd slack_channels [--types public_channel,private_channel] [--limit N]` | List Slack channels |
+| `xangi-cmd slack_search --channel <id> --keyword "text" [--count N]` | Search Slack messages |
+| `xangi-cmd slack_edit --channel <id> --message-ts <ts> --content "text"` | Edit a Slack message |
+| `xangi-cmd slack_delete --channel <id> --message-ts <ts>` | Delete a Slack message |
 
 ### Examples
 
@@ -232,6 +237,12 @@ xangi-cmd discord_channels --guild 9876543210
 
 # Search messages
 xangi-cmd discord_search --channel 1234567890 --keyword "PR"
+
+# Slack operations
+xangi-cmd slack_send --channel C01234567 --message "Work completed!"
+xangi-cmd slack_send --channel C01234567 --thread-ts 1719876543.000100 --message "Thread reply"
+xangi-cmd slack_channels --types public_channel,private_channel --limit 100
+xangi-cmd slack_search --channel C01234567 --keyword "PR" --count 15
 ```
 
 If `--channel` is omitted while running inside xangi, the current channel ID is used automatically. When running the CLI standalone, `--channel` is required.
@@ -240,6 +251,8 @@ If `--channel` is omitted while running inside xangi, the current channel ID is 
 # Edit and delete messages
 xangi-cmd discord_edit --channel 1234567890 --message-id 111222333 --content "updated content"
 xangi-cmd discord_delete --channel 1234567890 --message-id 111222333
+xangi-cmd slack_edit --channel C01234567 --message-ts 1719876543.000100 --content "updated content"
+xangi-cmd slack_delete --channel C01234567 --message-ts 1719876543.000100
 ```
 
 ### Tool Server

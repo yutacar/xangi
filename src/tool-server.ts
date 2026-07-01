@@ -12,9 +12,11 @@ import { createServer, type Server } from 'http';
 import { readFileSync, writeFileSync, mkdirSync } from 'fs';
 import { join, dirname } from 'path';
 import { discordApi } from './cli/discord-api.js';
+import { slackApi } from './cli/slack-api.js';
 import { scheduleCmd } from './cli/schedule-cmd.js';
 import { systemCmd } from './cli/system-cmd.js';
 import { webHistoryCmd } from './cli/web-history-cmd.js';
+import { slackHistoryCmd } from './cli/slack-history-cmd.js';
 import { isGitHubAppEnabled, generateInstallationToken } from './github-auth.js';
 import { ValidationError } from './errors.js';
 import type { EventTrigger, TriggerRequestBody } from './event-trigger.js';
@@ -57,6 +59,8 @@ async function executeCommand(
 ): Promise<string> {
   if (command.startsWith('discord_') || command === 'media_send') {
     return discordApi(command, flags, context);
+  } else if (command.startsWith('slack_') && command !== 'slack_history') {
+    return slackApi(command, flags, context);
   } else if (command.startsWith('schedule_')) {
     return scheduleCmd(command, flags);
   } else if (command.startsWith('system_')) {
@@ -85,6 +89,21 @@ async function executeCommand(
     }
     try {
       return webHistoryCmd(flags);
+    } finally {
+      if (previousChannel === undefined) {
+        delete process.env.XANGI_CHANNEL_ID;
+      } else {
+        process.env.XANGI_CHANNEL_ID = previousChannel;
+      }
+    }
+  } else if (command === 'slack_history') {
+    // 現Slackチャンネル解決のために context.channelId を env で渡す。
+    const previousChannel = process.env.XANGI_CHANNEL_ID;
+    if (context?.channelId) {
+      process.env.XANGI_CHANNEL_ID = context.channelId;
+    }
+    try {
+      return slackHistoryCmd(flags);
     } finally {
       if (previousChannel === undefined) {
         delete process.env.XANGI_CHANNEL_ID;

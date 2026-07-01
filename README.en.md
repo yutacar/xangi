@@ -4,11 +4,11 @@
 
 > **A**GENTIC **N**EON **G**ENESIS **I**NTELLIGENCE
 
-An AI assistant for Discord / Slack / browser / LINE, powered by Claude Code / Codex / Cursor CLI / Grok CLI / Antigravity CLI / Local LLM backends. Discord recommended; browser-only mode also supported.
+An AI assistant for Discord / Slack / Telegram / browser / LINE, powered by Claude Code / Codex / Cursor CLI / Grok CLI / Antigravity CLI / Local LLM backends. Discord recommended; browser-only mode also supported.
 
 ## Features
 
-- Discord / Slack / Web Chat UI / LINE support
+- Discord / Slack / Telegram / Web Chat UI / LINE support
 - Claude Code / Codex / Cursor CLI / Grok CLI / Antigravity CLI / Local LLM support
 - Per-channel backend / model / effort switching with `/backend`
 - Skills, scheduler, and event triggers
@@ -98,6 +98,7 @@ Open `http://localhost:18888` in your browser.
 
 > 💡 The Web Chat UI is opt-in (`WEB_CHAT_ENABLED=true`) to avoid surprise port conflicts. Change the port with `WEB_CHAT_PORT`.
 > 💡 See [Slack Setup](docs/en/slack-setup.md) for Slack integration.
+> 💡 See [Telegram Setup](docs/en/telegram-setup.md) for Telegram Bot integration.
 
 ### Auto-restart (pm2)
 
@@ -184,6 +185,7 @@ A book about building AI assistants with xangi.
 - [Usage Guide](docs/en/usage.md) - Docker, env vars, Local LLM, troubleshooting
 - [Discord Setup](docs/en/discord-setup.md) - Bot creation & ID lookup
 - [Slack Setup](docs/en/slack-setup.md) - Slack integration
+- [Telegram Setup](docs/en/telegram-setup.md) - Telegram Bot integration
 - [LINE Setup](docs/en/line-setup.md) - LINE Messaging API integration (incl. Tailscale Funnel for public webhook)
 - [Design Document](docs/en/design.md) - Architecture, design philosophy, data flow
 - [External Event Stream](docs/en/events.md) - Response lifecycle event delivery spec

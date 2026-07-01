@@ -49,6 +49,12 @@ describe('buildXangiCommands trigger section', () => {
     const prompt = buildXangiCommands('slack');
     expect(prompt).not.toContain('xangi-cmd discord_history --count 10');
     expect(prompt).toContain('SlackチャンネルIDはDiscord snowflakeではありません');
+    expect(prompt).toContain('xangi-cmd slack_send');
+    expect(prompt).toContain('xangi-cmd slack_channels');
+    expect(prompt).toContain('xangi-cmd slack_search');
+    expect(prompt).toContain('xangi-cmd slack_edit');
+    expect(prompt).toContain('xangi-cmd slack_delete');
+    expect(prompt).toContain('message-ts');
   });
 
   it('TRIGGER_ENABLED=true なら platform 未指定 (後方互換) にも注入する', () => {

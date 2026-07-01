@@ -25,11 +25,26 @@ describe('Local LLM xangi tools by platform', () => {
     expect(toolNames).not.toContain('slack_history');
   });
 
+  it('Slack sessions expose Slack tools but not Discord tools', () => {
+    const toolNames = names('slack');
+
+    expect(toolNames).toContain('slack_history');
+    expect(toolNames).toContain('slack_send');
+    expect(toolNames).toContain('slack_channels');
+    expect(toolNames).toContain('slack_search');
+    expect(toolNames).toContain('slack_edit');
+    expect(toolNames).toContain('slack_delete');
+    expect(toolNames).not.toContain('discord_history');
+    expect(toolNames).not.toContain('discord_send');
+    expect(toolNames).not.toContain('web_history');
+  });
+
   it('keeps the legacy all-platform set when platform is unknown', () => {
     const toolNames = names();
 
     expect(toolNames).toContain('discord_history');
     expect(toolNames).toContain('web_history');
     expect(toolNames).toContain('slack_history');
+    expect(toolNames).toContain('slack_search');
   });
 });

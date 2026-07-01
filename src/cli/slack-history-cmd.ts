@@ -53,7 +53,8 @@ function fmtContent(content: unknown, maxChars: number): string {
 /**
  * 現 Slack チャンネルに対応する appSessionId を探す。
  * sessions.json を介さず、logs/sessions/*.jsonl から
- * messages の (contextKey or channelId) フィールドが一致するものを mtime 最新で 1 個拾う。
+ * messages の (contextKey or channelId) フィールド、またはメッセージ本文に注入される
+ * `[チャンネル: <id>]` ヘッダが一致するものを mtime 最新で 1 個拾う。
  */
 function resolveSlackSession(channelId: string): string | undefined {
   const dir = getSessionsDir();
@@ -70,10 +71,7 @@ function resolveSlackSession(channelId: string): string | undefined {
     }
     // 最初の有効な行で contextKey / channelId を判定 (1 ファイル全行スキャンは重い)
     const head = raw.split('\n').slice(0, 50).join('\n');
-    if (
-      head.includes(`"contextKey":"${channelId}"`) ||
-      head.includes(`"channelId":"${channelId}"`)
-    ) {
+    if (isSlackSessionHead(head, channelId)) {
       const m = statSync(path).mtimeMs;
       if (!best || m > best.mtime) {
         best = { name: file.replace(/\.jsonl$/, ''), mtime: m };
@@ -81,6 +79,15 @@ function resolveSlackSession(channelId: string): string | undefined {
     }
   }
   return best?.name;
+}
+
+function isSlackSessionHead(head: string, channelId: string): boolean {
+  return (
+    head.includes(`"contextKey":"${channelId}"`) ||
+    head.includes(`"channelId":"${channelId}"`) ||
+    head.includes(`[チャンネル: ${channelId}]`) ||
+    head.includes(`[Channel: ${channelId}]`)
+  );
 }
 
 export function slackHistoryCmd(flags: Record<string, string>): string {
