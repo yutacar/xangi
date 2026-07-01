@@ -370,6 +370,113 @@ const slackHistoryHandler: ToolHandler = {
   },
 };
 
+const slackSendHandler: ToolHandler = {
+  name: 'slack_send',
+  description: '指定Slackチャンネルにメッセージを送信する。thread-ts指定でスレッド返信もできる。',
+  parameters: {
+    type: 'object',
+    properties: {
+      channel: { type: 'string', description: 'SlackチャンネルID（省略時は現在のチャンネル）' },
+      message: { type: 'string', description: '送信するメッセージ' },
+      'thread-ts': { type: 'string', description: '返信先スレッドのts（任意）' },
+    },
+    required: ['message'],
+  },
+  async execute(args, context): Promise<ToolResult> {
+    const flags: Record<string, string> = { message: String(args.message) };
+    if (args.channel) flags.channel = String(args.channel);
+    if (args['thread-ts']) flags['thread-ts'] = String(args['thread-ts']);
+    const env = context.channelId ? { XANGI_CHANNEL_ID: context.channelId } : undefined;
+    return runXangiCmd(['slack_send', ...flagsToArgs(flags)], env);
+  },
+};
+
+const slackChannelsHandler: ToolHandler = {
+  name: 'slack_channels',
+  description: 'Slackチャンネル一覧を取得する。',
+  parameters: {
+    type: 'object',
+    properties: {
+      types: {
+        type: 'string',
+        description: '取得対象（例: public_channel,private_channel。デフォルトは両方）',
+      },
+      limit: { type: 'string', description: '取得件数（デフォルト100、最大1000）' },
+    },
+  },
+  async execute(args): Promise<ToolResult> {
+    const flags: Record<string, string> = {};
+    if (args.types) flags.types = String(args.types);
+    if (args.limit) flags.limit = String(args.limit);
+    return runXangiCmd(['slack_channels', ...flagsToArgs(flags)]);
+  },
+};
+
+const slackSearchHandler: ToolHandler = {
+  name: 'slack_search',
+  description: 'Slackチャンネル内のメッセージを検索する（最新メッセージから）。',
+  parameters: {
+    type: 'object',
+    properties: {
+      channel: { type: 'string', description: 'SlackチャンネルID（省略時は現在のチャンネル）' },
+      keyword: { type: 'string', description: '検索キーワード' },
+      count: { type: 'string', description: '検索対象件数（デフォルト15、最大100）' },
+    },
+    required: ['keyword'],
+  },
+  async execute(args, context): Promise<ToolResult> {
+    const flags: Record<string, string> = { keyword: String(args.keyword) };
+    if (args.channel) flags.channel = String(args.channel);
+    if (args.count) flags.count = String(args.count);
+    const env = context.channelId ? { XANGI_CHANNEL_ID: context.channelId } : undefined;
+    return runXangiCmd(['slack_search', ...flagsToArgs(flags)], env);
+  },
+};
+
+const slackEditHandler: ToolHandler = {
+  name: 'slack_edit',
+  description: 'Slack上の自分のメッセージを編集する。SlackのメッセージIDはtsを使う。',
+  parameters: {
+    type: 'object',
+    properties: {
+      channel: { type: 'string', description: 'SlackチャンネルID（省略時は現在のチャンネル）' },
+      'message-ts': { type: 'string', description: 'Slackメッセージts' },
+      content: { type: 'string', description: '新しいメッセージ内容' },
+    },
+    required: ['message-ts', 'content'],
+  },
+  async execute(args, context): Promise<ToolResult> {
+    const flags: Record<string, string> = {
+      'message-ts': String(args['message-ts']),
+      content: String(args.content),
+    };
+    if (args.channel) flags.channel = String(args.channel);
+    const env = context.channelId ? { XANGI_CHANNEL_ID: context.channelId } : undefined;
+    return runXangiCmd(['slack_edit', ...flagsToArgs(flags)], env);
+  },
+};
+
+const slackDeleteHandler: ToolHandler = {
+  name: 'slack_delete',
+  description: 'Slack上の自分のメッセージを削除する。SlackのメッセージIDはtsを使う。',
+  parameters: {
+    type: 'object',
+    properties: {
+      channel: { type: 'string', description: 'SlackチャンネルID（省略時は現在のチャンネル）' },
+      'message-ts': { type: 'string', description: 'Slackメッセージts' },
+    },
+    required: ['message-ts'],
+  },
+  async execute(args, context): Promise<ToolResult> {
+    const flags: Record<string, string> = {
+      'message-ts': String(args['message-ts']),
+    };
+    if (args.channel) flags.channel = String(args.channel);
+    const env = context.channelId ? { XANGI_CHANNEL_ID: context.channelId } : undefined;
+    return runXangiCmd(['slack_delete', ...flagsToArgs(flags)], env);
+  },
+};
+
 // ─── Export ─────────────────────────────────────────────────────────
 
 /** Discord接続時に追加するツール */
@@ -392,7 +499,14 @@ export function getWebTools(): ToolHandler[] {
 
 /** Slack接続時に追加するツール */
 export function getSlackTools(): ToolHandler[] {
-  return [slackHistoryHandler];
+  return [
+    slackHistoryHandler,
+    slackSendHandler,
+    slackChannelsHandler,
+    slackSearchHandler,
+    slackEditHandler,
+    slackDeleteHandler,
+  ];
 }
 
 /** スケジュール関連ツール */
@@ -412,7 +526,13 @@ export function getHistoryTools(): ToolHandler[] {
 
 /** 全xangiツール（プラットフォーム問わず） */
 export function getAllXangiTools(): ToolHandler[] {
-  return [...getDiscordTools(), ...getScheduleTools(), ...getSystemTools(), ...getHistoryTools()];
+  return [
+    ...getDiscordTools(),
+    ...getSlackTools(),
+    webHistoryHandler,
+    ...getScheduleTools(),
+    ...getSystemTools(),
+  ];
 }
 
 /** 実行プラットフォームに応じたxangiツール */

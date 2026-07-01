@@ -8,6 +8,7 @@
  * 環境変数:
  *   XANGI_DIR — xangi-devのディレクトリ（.envの読み込み元）
  *   DISCORD_TOKEN — Discord BOTトークン（.envから自動読み込み）
+ *   SLACK_BOT_TOKEN — Slack Bot Token（.envから自動読み込み）
  *
  * 使い方:
  *   node xangi-cmd.js discord_history --channel <id> [--count <n>] [--offset <n>]
@@ -16,6 +17,12 @@
  *   node xangi-cmd.js discord_search --channel <id> --keyword <text>
  *   node xangi-cmd.js discord_edit --channel <id> --message-id <id> --content <text>
  *   node xangi-cmd.js discord_delete --channel <id> --message-id <id>
+ *   node xangi-cmd.js slack_history [--channel <id>] [--count <n>]
+ *   node xangi-cmd.js slack_send --channel <id> --message <text> [--thread-ts <ts>]
+ *   node xangi-cmd.js slack_channels [--types public_channel,private_channel] [--limit <n>]
+ *   node xangi-cmd.js slack_search --channel <id> --keyword <text> [--count <n>]
+ *   node xangi-cmd.js slack_edit --channel <id> --message-ts <ts> --content <text>
+ *   node xangi-cmd.js slack_delete --channel <id> --message-ts <ts>
  *   node xangi-cmd.js web_history [--count <n>] [--previous]
  *   node xangi-cmd.js schedule_list
  *   node xangi-cmd.js schedule_add --input <text> --channel <id> --platform <discord|slack>
@@ -31,6 +38,7 @@ import { existsSync, readFileSync } from 'fs';
 import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
 import { discordApi } from './discord-api.js';
+import { slackApi } from './slack-api.js';
 import { scheduleCmd } from './schedule-cmd.js';
 import { systemCmd } from './system-cmd.js';
 import { interChatCmd } from './inter-chat-cmd.js';
@@ -136,9 +144,16 @@ Discord操作:
   discord_edit      メッセージ編集
   discord_delete    メッセージ削除
 
+Slack操作:
+  slack_history      現チャンネル履歴取得
+  slack_send         メッセージ送信
+  slack_channels     チャンネル一覧
+  slack_search       メッセージ検索
+  slack_edit         メッセージ編集
+  slack_delete       メッセージ削除
+
 Web Chat操作:
   web_history       Web Chat の現セッション履歴取得
-  slack_history     Slack の現チャンネル履歴取得
 
 スケジュール:
   schedule_list     一覧表示
@@ -167,6 +182,10 @@ Web Chat操作:
 
     if (command.startsWith('discord_')) {
       result = await discordApi(command, flags);
+    } else if (command === 'slack_history') {
+      result = slackHistoryCmd(flags);
+    } else if (command.startsWith('slack_')) {
+      result = await slackApi(command, flags);
     } else if (command.startsWith('schedule_')) {
       result = await scheduleCmd(command, flags);
     } else if (command === 'media_send') {
@@ -180,8 +199,6 @@ Web Chat操作:
       result = await interChatCmd(command, flags);
     } else if (command === 'web_history') {
       result = webHistoryCmd(flags);
-    } else if (command === 'slack_history') {
-      result = slackHistoryCmd(flags);
     } else if (command === 'terminal_session') {
       result = await terminalSessionCmd(flags);
     } else if (command === 'g2_session') {

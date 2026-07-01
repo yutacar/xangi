@@ -82,6 +82,22 @@ describe('tool-server HTTP status codes', () => {
     expect(body.error).toContain('--message is required');
   });
 
+  it('returns 400 for missing required flag (slack_send without --message)', async () => {
+    const res = await fetch(`${serverUrl}/api/execute`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        command: 'slack_send',
+        flags: { channel: 'C12345' }, // message 欠如
+        context: {},
+      }),
+    });
+
+    expect(res.status).toBe(400);
+    const body = (await res.json()) as { ok: boolean; error: string };
+    expect(body.error).toContain('--message is required');
+  });
+
   it('returns 400 when command is missing', async () => {
     const res = await fetch(`${serverUrl}/api/execute`, {
       method: 'POST',

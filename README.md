@@ -4,11 +4,11 @@
 
 > **A**GENTIC **N**EON **G**ENESIS **I**NTELLIGENCE
 
-Claude Code / Codex / Cursor CLI / Grok CLI / Antigravity CLI / Local LLMをバックエンドに、Discord / Slack / ブラウザ / LINE から利用できる AI アシスタント。Discord 推奨、ブラウザ単独でも動作可。
+Claude Code / Codex / Cursor CLI / Grok CLI / Antigravity CLI / Local LLMをバックエンドに、Discord / Slack / Telegram / ブラウザ / LINE から利用できる AI アシスタント。Discord 推奨、ブラウザ単独でも動作可。
 
 ## Features
 
-- Discord / Slack / Web Chat UI / LINE 対応
+- Discord / Slack / Telegram / Web Chat UI / LINE 対応
 - Claude Code / Codex / Cursor CLI / Grok CLI / Antigravity CLI / Local LLM 対応
 - `/backend` でチャンネルごとに backend / model / effort を切り替え
 - スキル、スケジューラー、イベントトリガー
@@ -98,6 +98,7 @@ npm start
 
 > 💡 ポート競合を避けるため Web Chat UI は明示的に `WEB_CHAT_ENABLED=true` した時だけ起動します。ポート変更は `WEB_CHAT_PORT` で。
 > 💡 Slack を使う場合は [Slack セットアップ](docs/slack-setup.md) を参照。
+> 💡 Telegram を使う場合は [Telegram セットアップ](docs/telegram-setup.md) を参照。
 
 ### 自動再起動（pm2）
 
@@ -184,6 +185,7 @@ xangi を使ったAIアシスタント構築のノウハウをまとめた書籍
 - [使い方ガイド](docs/usage.md) - Docker実行・環境変数・Local LLM・複数インスタンスの運用・セッションの保持期間・トラブルシューティング
 - [Discord セットアップ](docs/discord-setup.md) - Bot作成・ID確認方法
 - [Slack セットアップ](docs/slack-setup.md) - Slack連携
+- [Telegram セットアップ](docs/telegram-setup.md) - Telegram Bot連携
 - [LINE セットアップ](docs/line-setup.md) - LINE Messaging API 連携 (Tailscale Funnel での外部公開含む)
 - [設計ドキュメント](docs/design.md) - アーキテクチャ・設計思想・データフロー
 - [外部イベントストリーム](docs/events.md) - 応答ライフサイクルのイベント配信仕様

@@ -491,8 +491,8 @@ Design rationale: Step A's skill hinting is usually decisive — by surfacing "w
 
 | Category | Allowed |
 |---|---|
-| Direct read-only tools | `read` / `glob` / `grep` / `tool_search` / `discord_history` / `web_history` / `slack_history` / `discord_channels` / `discord_search` / `schedule_list` |
-| `exec` / `bash` subcommands | Only commands starting with `xangi-cmd {discord_history,web_history,slack_history,discord_channels,discord_search,schedule_list,system_settings}` |
+| Direct read-only tools | `read` / `glob` / `grep` / `tool_search` / `discord_history` / `web_history` / `slack_history` / `discord_channels` / `discord_search` / `slack_channels` / `slack_search` / `schedule_list` |
+| `exec` / `bash` subcommands | Only commands starting with `xangi-cmd {discord_history,web_history,slack_history,discord_channels,discord_search,slack_channels,slack_search,schedule_list,system_settings}` |
 | Shell metacharacters | If the command contains any of `\|` / `&` / `;` / `` ` `` / `$` / `<` / `>` / `$(...)` / `&&` / `\|\|` / `>` redirect → immediate reject |
 
 Anything else returns `{safe: false, reason}`, leading to an `unsafe_tool_in_pseudo_format` structured error that nudges the LLM toward the proper function_calling structure.

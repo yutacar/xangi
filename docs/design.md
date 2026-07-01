@@ -499,8 +499,8 @@ API: `recordToolCallAndDetectLoop(session, sig)` が `{ kind: 'none' \| 'exact' 
 
 | カテゴリ | 対象 |
 |---|---|
-| read-only tool 直接 | `read` / `glob` / `grep` / `tool_search` / `discord_history` / `web_history` / `slack_history` / `discord_channels` / `discord_search` / `schedule_list` |
-| `exec` / `bash` のサブコマンド | `xangi-cmd {discord_history,web_history,slack_history,discord_channels,discord_search,schedule_list,system_settings}` のいずれかで始まる場合のみ |
+| read-only tool 直接 | `read` / `glob` / `grep` / `tool_search` / `discord_history` / `web_history` / `slack_history` / `discord_channels` / `discord_search` / `slack_channels` / `slack_search` / `schedule_list` |
+| `exec` / `bash` のサブコマンド | `xangi-cmd {discord_history,web_history,slack_history,discord_channels,discord_search,slack_channels,slack_search,schedule_list,system_settings}` のいずれかで始まる場合のみ |
 | shell metacharacter | `\|` / `&` / `;` / `` ` `` / `$` / `<` / `>` / `$(...)` / `&&` / `\|\|` / `>` リダイレクトが含まれていたら即 reject |
 
 それ以外は `{safe: false, reason}` を返し、`unsafe_tool_in_pseudo_format` 構造化エラーで LLM に proper function_calling 構造への切替を促す。
