@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { BackendResolver } from '../src/backend-resolver.js';
 import type { Config } from '../src/config.js';
 import { DynamicRunnerManager } from '../src/dynamic-runner.js';
@@ -74,5 +74,36 @@ describe('DynamicRunnerManager platform routing', () => {
         process.env.CHANNEL_OVERRIDES = originalOverrides;
       }
     }
+  });
+
+  it('uses settingsChannelId for backend resolution while keeping channelId as the run key', async () => {
+    const config = makeConfig('discord');
+    const resolved = { backend: 'local-llm' as const, model: 'test' };
+    const resolver = {
+      resolve: vi.fn().mockReturnValue(resolved),
+      getDefault: vi.fn().mockReturnValue(resolved),
+    } as unknown as BackendResolver;
+    const manager = new DynamicRunnerManager(config, resolver);
+    const run = vi.fn().mockResolvedValue({ result: 'ok', sessionId: 'session-1' });
+
+    (
+      manager as unknown as {
+        defaultRunner: { run: typeof run };
+      }
+    ).defaultRunner = { run };
+
+    await manager.run('prompt', {
+      channelId: 'thread-456',
+      settingsChannelId: 'parent-123',
+    });
+
+    expect(resolver.resolve).toHaveBeenCalledWith('parent-123', undefined);
+    expect(run).toHaveBeenCalledWith(
+      'prompt',
+      expect.objectContaining({
+        channelId: 'thread-456',
+        settingsChannelId: 'parent-123',
+      })
+    );
   });
 });

@@ -472,6 +472,7 @@ CHANNEL_OVERRIDES={"チャンネルID":{"backend":"local-llm","model":"nemotron-
 #### 永続化
 
 `/backend set` で変更した設定は `.env` の `CHANNEL_OVERRIDES` に自動保存されます。再起動後も設定が維持されます。
+Discord スレッド内では、`/backend` と `/llmmode` は親チャンネルの `CHANNEL_OVERRIDES` を読み書きします。通常の会話セッションや実行ロックはスレッドIDで分離したまま、モデル・バックエンド設定だけ親チャンネルから継承します。
 
 Docker環境では `.env` はコンテナ外にあるため、AI（Claude Code等）から変更されることはありません。
 
@@ -495,6 +496,7 @@ AIは `.env` ファイルを編集して設定を変更できます：
 
 `/threadmode mode:on|off|default|show` で、このチャンネルの Discord 発言ごとスレッド返信モードを稼働中に確認・切替できます（再起動不要、`settings.json` に永続化）。`default` はチャンネル設定を削除し、全体デフォルトの `DISCORD_REPLY_IN_THREAD` に戻します。
 既存スレッド内で受けた発言では、スレッドの元メッセージを `🧵 スレッド元` としてプロンプトに自動追加します。これにより、親チャンネル側の starter message がスレッド履歴に出ない場合でも、最初の話題を文脈として扱えます。
+Discord スレッド内では、`/autoreply` / `/notify` / `/threadmode` とチャンネル topic 注入は親チャンネル設定を継承します。
 このコマンドを無効にするには `.env` に `ALLOW_THREAD_MODE_COMMAND=false` を設定してください（デフォルト: 有効）。
 
 `/notify` コマンドで、長い Discord ターン完了時の別メッセージ通知をチャンネルごとに切り替えられます。起動時の `DISCORD_COMPLETION_NOTIFY` はデフォルト値として使われ、チャンネル override は `settings.json` に保存されます。対象は通常の Discord メッセージターンのみで、スケジュール起点ターンは通知しません。
@@ -1141,7 +1143,7 @@ AIエージェント（CLI spawn / Local LLM exec）に渡す環境変数は `sr
 | `WEB_CHAT_DOWNLOAD_ACCEPT`   | Web Chat ダウンロード許可拡張子リスト（`.html,.txt` 等）                                                                | 全許可                  |
 | `ALLOWED_BACKENDS`           | `/backend` で切り替え許可するバックエンド（カンマ区切り）。未設定なら全バックエンド許可                                 | 全バックエンド          |
 | `ALLOWED_MODELS`             | `/backend` で切り替え許可するモデル（カンマ区切り）                                                                     | -                       |
-| `CHANNEL_OVERRIDES`          | チャンネル別バックエンド設定（JSON）                                                                                    | -                       |
+| `CHANNEL_OVERRIDES`          | チャンネル別バックエンド設定（JSON）。Discord スレッドでは親チャンネルIDの設定を継承                                      | -                       |
 | `ANTHROPIC_API_KEY`          | Claude Code backend に渡す Anthropic API key（Claude Code利用時のみ）                                                   | -                       |
 | `CLAUDE_CODE_BARE`           | Claude Code に `--bare` を渡し、OAuth/keychain ではなく API key 認証に固定                                              | `false`                 |
 | `CLAUDE_CODE_MAX_BUDGET_USD` | Claude Code に `--max-budget-usd` を渡し、API呼び出しの上限額を設定                                                     | -                       |

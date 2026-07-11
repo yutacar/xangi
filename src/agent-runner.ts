@@ -14,6 +14,7 @@ export interface RunOptions {
   skipPermissions?: boolean;
   sessionId?: string;
   channelId?: string; // プロセス管理用
+  settingsChannelId?: string; // per-channel 設定解決用。Discord スレッドでは親チャンネルIDを入れる。
   appSessionId?: string; // xangi側セッションID（ログ用）
   platform?: ChatPlatform; // 実行元プラットフォーム（Web/EvenとDiscordのprompt分離用）
   defaultBackend?: AgentBackend; // 実行経路ごとの backend default（CHANNEL_OVERRIDES が優先）
