@@ -57,6 +57,23 @@ describe('buildXangiCommands trigger section', () => {
     expect(prompt).toContain('message-ts');
   });
 
+  it('slack の schedule_add 例には --platform slack を含める', () => {
+    const prompt = buildXangiCommands('slack');
+
+    expect(prompt).toContain(
+      'xangi-cmd schedule_add --input "毎日 9:00 おはよう" --channel <チャンネルID> --platform slack'
+    );
+    expect(prompt).toContain('`schedule_add` に `--platform slack` を付ける');
+  });
+
+  it('discord の schedule_add 例には --platform discord を含める', () => {
+    const prompt = buildXangiCommands('discord');
+
+    expect(prompt).toContain(
+      'xangi-cmd schedule_add --input "毎日 9:00 おはよう" --channel <チャンネルID> --platform discord'
+    );
+  });
+
   it('TRIGGER_ENABLED=true なら platform 未指定 (後方互換) にも注入する', () => {
     process.env.TRIGGER_ENABLED = 'true';
     expect(buildXangiCommands()).toContain(TRIGGER_HEADING);

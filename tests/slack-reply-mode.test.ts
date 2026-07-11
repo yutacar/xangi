@@ -158,6 +158,88 @@ describe('shouldProcessSlackMessage', () => {
     ).toBe(false);
   });
 
+  it('processes Slack file share messages in auto-reply channels', () => {
+    expect(
+      shouldProcessSlackMessage(
+        { autoReplyChannels: [AUTO_REPLY_CHANNEL] },
+        {
+          channel: AUTO_REPLY_CHANNEL,
+          channelType: 'group',
+          subtype: 'file_share',
+        }
+      )
+    ).toBe(true);
+  });
+
+  it('processes Slack file share messages in DMs', () => {
+    expect(
+      shouldProcessSlackMessage(
+        { autoReplyChannels: [] },
+        {
+          channel: DM_CHANNEL,
+          channelType: 'im',
+          subtype: 'file_share',
+        }
+      )
+    ).toBe(true);
+  });
+
+  it('processes Slack file share replies in active thread sessions', () => {
+    expect(
+      shouldProcessSlackMessage(
+        { autoReplyChannels: [AUTO_REPLY_CHANNEL] },
+        {
+          channel: OTHER_CHANNEL,
+          channelType: 'group',
+          threadTs: THREAD_TS,
+          subtype: 'file_share',
+          hasActiveThreadSession: true,
+        }
+      )
+    ).toBe(true);
+  });
+
+  it('does not process Slack file share replies outside active or auto-reply contexts', () => {
+    expect(
+      shouldProcessSlackMessage(
+        { autoReplyChannels: [AUTO_REPLY_CHANNEL] },
+        {
+          channel: OTHER_CHANNEL,
+          channelType: 'group',
+          threadTs: THREAD_TS,
+          subtype: 'file_share',
+          hasActiveThreadSession: false,
+        }
+      )
+    ).toBe(false);
+  });
+
+  it('processes Slack /me messages in auto-reply channels', () => {
+    expect(
+      shouldProcessSlackMessage(
+        { autoReplyChannels: [AUTO_REPLY_CHANNEL] },
+        {
+          channel: AUTO_REPLY_CHANNEL,
+          channelType: 'group',
+          subtype: 'me_message',
+        }
+      )
+    ).toBe(true);
+  });
+
+  it('processes Slack /me messages in DMs', () => {
+    expect(
+      shouldProcessSlackMessage(
+        { autoReplyChannels: [] },
+        {
+          channel: DM_CHANNEL,
+          channelType: 'im',
+          subtype: 'me_message',
+        }
+      )
+    ).toBe(true);
+  });
+
   it('does not process Slack system messages in DMs', () => {
     expect(
       shouldProcessSlackMessage(

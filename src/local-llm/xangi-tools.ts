@@ -218,35 +218,44 @@ const scheduleListHandler: ToolHandler = {
   },
 };
 
-const scheduleAddHandler: ToolHandler = {
-  name: 'schedule_add',
-  description:
-    'スケジュールを追加する。例: "30分後 ミーティング", "15:00 レビュー", "毎日 9:00 おはよう", "cron 0 9 * * * おはよう"',
-  parameters: {
-    type: 'object',
-    properties: {
-      input: {
-        type: 'string',
-        description: 'スケジュール設定（例: "毎日 9:00 おはよう"）',
+function schedulePlatformEnv(platform?: ChatPlatform): Record<string, string> | undefined {
+  return platform === 'discord' || platform === 'slack' ? { XANGI_PLATFORM: platform } : undefined;
+}
+
+function createScheduleAddHandler(defaultPlatform?: ChatPlatform): ToolHandler {
+  return {
+    name: 'schedule_add',
+    description:
+      'スケジュールを追加する。例: "30分後 ミーティング", "15:00 レビュー", "毎日 9:00 おはよう", "cron 0 9 * * * おはよう"',
+    parameters: {
+      type: 'object',
+      properties: {
+        input: {
+          type: 'string',
+          description: 'スケジュール設定（例: "毎日 9:00 おはよう"）',
+        },
+        channel: { type: 'string', description: '送信先チャンネルID' },
+        platform: {
+          type: 'string',
+          description: 'プラットフォーム（discord/slack）',
+          enum: ['discord', 'slack'],
+        },
       },
-      channel: { type: 'string', description: '送信先チャンネルID' },
-      platform: {
-        type: 'string',
-        description: 'プラットフォーム（discord/slack）',
-        enum: ['discord', 'slack'],
-      },
+      required: ['input', 'channel'],
     },
-    required: ['input', 'channel'],
-  },
-  async execute(args): Promise<ToolResult> {
-    const flags: Record<string, string> = {
-      input: String(args.input),
-      channel: String(args.channel),
-    };
-    if (args.platform) flags.platform = String(args.platform);
-    return runXangiCmd(['schedule_add', ...flagsToArgs(flags)]);
-  },
-};
+    async execute(args): Promise<ToolResult> {
+      const flags: Record<string, string> = {
+        input: String(args.input),
+        channel: String(args.channel),
+      };
+      if (args.platform) flags.platform = String(args.platform);
+      return runXangiCmd(
+        ['schedule_add', ...flagsToArgs(flags)],
+        schedulePlatformEnv(defaultPlatform)
+      );
+    },
+  };
+}
 
 const scheduleRemoveHandler: ToolHandler = {
   name: 'schedule_remove',
@@ -531,8 +540,13 @@ export function getSlackTools(): ToolHandler[] {
 }
 
 /** スケジュール関連ツール */
-export function getScheduleTools(): ToolHandler[] {
-  return [scheduleListHandler, scheduleAddHandler, scheduleRemoveHandler, scheduleToggleHandler];
+export function getScheduleTools(platform?: ChatPlatform): ToolHandler[] {
+  return [
+    scheduleListHandler,
+    createScheduleAddHandler(platform),
+    scheduleRemoveHandler,
+    scheduleToggleHandler,
+  ];
 }
 
 /** システム関連ツール */
@@ -558,7 +572,7 @@ export function getAllXangiTools(): ToolHandler[] {
 
 /** 実行プラットフォームに応じたxangiツール */
 export function getXangiTools(platform?: ChatPlatform): ToolHandler[] {
-  const commonTools = [...getScheduleTools(), ...getSystemTools()];
+  const commonTools = [...getScheduleTools(platform), ...getSystemTools()];
 
   if (platform === 'web') {
     return [...getWebTools(), ...commonTools];

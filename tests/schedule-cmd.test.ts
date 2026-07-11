@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import { mkdtempSync, rmSync, existsSync, mkdirSync } from 'fs';
+import { mkdtempSync, rmSync, existsSync, mkdirSync, readFileSync } from 'fs';
 import { join } from 'path';
 import { tmpdir } from 'os';
 import { scheduleCmd } from '../src/cli/schedule-cmd.js';
@@ -18,6 +18,7 @@ describe('schedule-cmd WORKSPACE_PATH (PR #189)', () => {
     tmpDir = mkdtempSync(join(tmpdir(), 'schedule-cmd-test-'));
     originalEnv = { ...process.env };
     delete process.env.DATA_DIR;
+    delete process.env.XANGI_PLATFORM;
     process.env.WORKSPACE_PATH = tmpDir;
   });
 
@@ -55,5 +56,44 @@ describe('schedule-cmd WORKSPACE_PATH (PR #189)', () => {
   it('returns empty list initially under fresh WORKSPACE_PATH', async () => {
     const result = await scheduleCmd('schedule_list', {});
     expect(result).toContain('スケジュールはありません');
+  });
+
+  it('uses XANGI_PLATFORM when --platform is omitted', async () => {
+    process.env.XANGI_PLATFORM = 'slack';
+
+    await scheduleCmd('schedule_add', {
+      input: '毎日 9:00 おはよう',
+      channel: 'C123',
+    });
+
+    const schedules = JSON.parse(
+      readFileSync(join(tmpDir, '.xangi', 'schedules.json'), 'utf-8')
+    ) as Array<{ platform: string; channelId: string }>;
+    expect(schedules[0]).toMatchObject({ platform: 'slack', channelId: 'C123' });
+  });
+
+  it('lets explicit --platform override XANGI_PLATFORM', async () => {
+    process.env.XANGI_PLATFORM = 'slack';
+
+    await scheduleCmd('schedule_add', {
+      input: '毎日 9:00 おはよう',
+      channel: '1234567890',
+      platform: 'discord',
+    });
+
+    const schedules = JSON.parse(
+      readFileSync(join(tmpDir, '.xangi', 'schedules.json'), 'utf-8')
+    ) as Array<{ platform: string }>;
+    expect(schedules[0]?.platform).toBe('discord');
+  });
+
+  it('rejects invalid schedule platforms', async () => {
+    await expect(
+      scheduleCmd('schedule_add', {
+        input: '毎日 9:00 おはよう',
+        channel: 'ch1',
+        platform: 'mastodon',
+      })
+    ).rejects.toThrow('--platform must be discord or slack');
   });
 });
