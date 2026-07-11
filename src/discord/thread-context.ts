@@ -13,6 +13,42 @@ export function resolveConversationChannelId(
   return createdThreadId ?? receivedChannelId;
 }
 
+export function resolveDiscordSettingsChannelId(
+  receivedChannelId: string,
+  channel: {
+    isThread?: () => boolean;
+    parentId?: string | null;
+  }
+): string {
+  if (typeof channel.isThread === 'function' && channel.isThread() && channel.parentId) {
+    return channel.parentId;
+  }
+  return receivedChannelId;
+}
+
+export function getDiscordChannelTopic(channel: {
+  topic?: string | null;
+  isThread?: () => boolean;
+  parent?: unknown;
+}): string | null {
+  if (typeof channel.topic === 'string' && channel.topic.length > 0) {
+    return channel.topic;
+  }
+  const parent =
+    channel.parent && typeof channel.parent === 'object'
+      ? (channel.parent as { topic?: unknown })
+      : null;
+  if (
+    typeof channel.isThread === 'function' &&
+    channel.isThread() &&
+    typeof parent?.topic === 'string' &&
+    parent.topic.length > 0
+  ) {
+    return parent.topic;
+  }
+  return null;
+}
+
 export function buildDiscordChannelContextLine(params: {
   channelName: string | null;
   conversationChannelId: string;

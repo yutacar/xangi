@@ -9,7 +9,9 @@ import type { Config } from '../src/config.js';
 import { registerDiscordMessageHandlers } from '../src/discord/message-handler.js';
 import {
   buildDiscordChannelContextLine,
+  getDiscordChannelTopic,
   resolveConversationChannelId,
+  resolveDiscordSettingsChannelId,
 } from '../src/discord/thread-context.js';
 import { clearSettingsCache, initSettings, saveSettings } from '../src/settings.js';
 import { clearSessions, initSessions } from '../src/sessions.js';
@@ -43,6 +45,41 @@ describe('resolveConversationChannelId', () => {
 
   it('スレッドを作成しなかった場合（既にスレッド内 / DM / 作成不可）は受信チャンネルIDを使う', () => {
     expect(resolveConversationChannelId('channel-123', undefined)).toBe('channel-123');
+  });
+});
+
+describe('resolveDiscordSettingsChannelId', () => {
+  it('既存スレッドでは親チャンネルIDを設定解決に使う', () => {
+    expect(
+      resolveDiscordSettingsChannelId('thread-456', {
+        isThread: () => true,
+        parentId: 'parent-123',
+      })
+    ).toBe('parent-123');
+  });
+
+  it('通常チャンネルでは受信チャンネルIDを設定解決に使う', () => {
+    expect(
+      resolveDiscordSettingsChannelId('channel-123', {
+        isThread: () => false,
+        parentId: null,
+      })
+    ).toBe('channel-123');
+  });
+});
+
+describe('getDiscordChannelTopic', () => {
+  it('通常チャンネルではチャンネル topic を使う', () => {
+    expect(getDiscordChannelTopic({ topic: 'parent rules' })).toBe('parent rules');
+  });
+
+  it('スレッドでは親チャンネル topic を使う', () => {
+    expect(
+      getDiscordChannelTopic({
+        isThread: () => true,
+        parent: { topic: 'thread inherited rules' },
+      })
+    ).toBe('thread inherited rules');
   });
 });
 
@@ -209,8 +246,124 @@ describe('Discord thread run lock', () => {
     expect(prompt).toContain('Don’t rewrite your CLI for agents');
     expect(prompt).toContain('詳しく教えて');
     expect(runStream.mock.calls[0][2]).toEqual(
-      expect.objectContaining({ channelId: 'thread-123', appSessionId: expect.any(String) })
+      expect.objectContaining({
+        channelId: 'thread-123',
+        settingsChannelId: '123',
+        appSessionId: expect.any(String),
+      })
     );
+  });
+
+  it('既存スレッド内メッセージでは親チャンネル topic をプロンプトに含める', async () => {
+    saveSettings({
+      discordAutoReplyChannels: { '123': true },
+    });
+
+    const handlers = new Map<string, (message: Message) => Promise<void>>();
+    const client = {
+      user: { id: '999' },
+      on: vi.fn((event: string, handler: (message: Message) => Promise<void>) => {
+        handlers.set(event, handler);
+        return client;
+      }),
+      channels: { fetch: vi.fn() },
+    } as unknown as Client;
+    const runStream = vi.fn().mockResolvedValue({ result: 'ok', sessionId: 'provider-1' });
+    const agentRunner = {
+      runStream,
+      getTimeoutState: vi.fn().mockReturnValue(undefined),
+    } as unknown as AgentRunner;
+    const config = {
+      agent: { config: { skipPermissions: false, workdir: tempDir } },
+      discord: {
+        allowedUsers: ['*'],
+        replyInThread: true,
+        streaming: true,
+        showThinking: true,
+        showButtons: false,
+      },
+    } as Config;
+
+    registerDiscordMessageHandlers({
+      client,
+      config,
+      agentRunner,
+      workdir: tempDir!,
+    });
+
+    const message = createExistingThreadMessage({
+      messageId: '2002',
+      content: 'このルールで返して',
+      threadId: 'thread-456',
+      parentChannelId: '123',
+      parentTopic: 'このチャンネルでは簡潔に答える',
+      starterContent: 'thread starter',
+      client,
+    });
+    const onMessageCreate = handlers.get(Events.MessageCreate)!;
+
+    await onMessageCreate(message);
+
+    const prompt = runStream.mock.calls[0][0] as string;
+    expect(prompt).toContain('[チャンネルルール（必ず従うこと）]');
+    expect(prompt).toContain('このチャンネルでは簡潔に答える');
+  });
+
+  it('既存スレッド内メッセージでは親チャンネルの完了通知設定を使う', async () => {
+    saveSettings({
+      discordAutoReplyChannels: { '123': true },
+      discordCompletionNotifyChannels: { '123': 'off' },
+    });
+
+    const handlers = new Map<string, (message: Message) => Promise<void>>();
+    const client = {
+      user: { id: '999' },
+      on: vi.fn((event: string, handler: (message: Message) => Promise<void>) => {
+        handlers.set(event, handler);
+        return client;
+      }),
+      channels: { fetch: vi.fn() },
+    } as unknown as Client;
+    const runStream = vi.fn().mockResolvedValue({ result: 'ok', sessionId: 'provider-1' });
+    const agentRunner = {
+      runStream,
+      getTimeoutState: vi.fn().mockReturnValue(undefined),
+    } as unknown as AgentRunner;
+    const config = {
+      agent: { config: { skipPermissions: false, workdir: tempDir } },
+      discord: {
+        allowedUsers: ['*'],
+        replyInThread: true,
+        streaming: true,
+        showThinking: true,
+        showButtons: false,
+        completionNotifyMode: 'message',
+        completionNotifyAfterMs: 0,
+      },
+    } as Config;
+
+    registerDiscordMessageHandlers({
+      client,
+      config,
+      agentRunner,
+      workdir: tempDir!,
+    });
+
+    const message = createExistingThreadMessage({
+      messageId: '2003',
+      content: '通知しないで',
+      threadId: 'thread-789',
+      parentChannelId: '123',
+      starterContent: 'thread starter',
+      client,
+    });
+    const onMessageCreate = handlers.get(Events.MessageCreate)!;
+
+    await onMessageCreate(message);
+
+    expect(
+      (message.channel as unknown as { send: ReturnType<typeof vi.fn> }).send
+    ).not.toHaveBeenCalled();
   });
 });
 
@@ -274,6 +427,7 @@ function createExistingThreadMessage(params: {
   content: string;
   threadId: string;
   parentChannelId: string;
+  parentTopic?: string;
   starterContent: string;
   client: Client;
 }): Message {
@@ -298,6 +452,7 @@ function createExistingThreadMessage(params: {
     id: params.threadId,
     name: '詳しく教えて',
     parentId: params.parentChannelId,
+    parent: params.parentTopic ? { topic: params.parentTopic } : null,
     isThread: () => true,
     fetchStarterMessage: vi.fn().mockResolvedValue(starterMessage),
     send: vi.fn().mockResolvedValue(replyMessage),

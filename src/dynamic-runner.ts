@@ -177,7 +177,8 @@ export class DynamicRunnerManager extends EventEmitter implements AgentRunner {
    */
   async run(prompt: string, options?: RunOptions): Promise<RunResult> {
     const channelId = options?.channelId;
-    const resolved = this.resolver.resolve(channelId, this.getRequestDefault(options));
+    const settingsChannelId = options?.settingsChannelId ?? channelId;
+    const resolved = this.resolver.resolve(settingsChannelId, this.getRequestDefault(options));
     const runner = this.getRunner(channelId, resolved, options?.platform);
 
     // effort / localLlmMode をオプションに注入（resolved 由来）
@@ -200,7 +201,8 @@ export class DynamicRunnerManager extends EventEmitter implements AgentRunner {
     options?: RunOptions
   ): Promise<RunResult> {
     const channelId = options?.channelId;
-    const resolved = this.resolver.resolve(channelId, this.getRequestDefault(options));
+    const settingsChannelId = options?.settingsChannelId ?? channelId;
+    const resolved = this.resolver.resolve(settingsChannelId, this.getRequestDefault(options));
     const runner = this.getRunner(channelId, resolved, options?.platform);
 
     const runOptions = this.injectResolvedFields(

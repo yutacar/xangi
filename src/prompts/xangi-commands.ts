@@ -2,7 +2,10 @@
  * xangi専用コマンド — プラットフォーム別に組み立て
  */
 import { XANGI_COMMANDS_COMMON, XANGI_COMMANDS_TRIGGER } from './xangi-commands-common.js';
-import { XANGI_COMMANDS_CHAT_PLATFORM } from './xangi-commands-chat-platform.js';
+import {
+  XANGI_COMMANDS_CHAT_PLATFORM,
+  buildXangiCommandsChatPlatform,
+} from './xangi-commands-chat-platform.js';
 import { XANGI_COMMANDS_DISCORD } from './xangi-commands-discord.js';
 import { XANGI_COMMANDS_SLACK } from './xangi-commands-slack.js';
 import { XANGI_COMMANDS_WEB } from './xangi-commands-web.js';
@@ -40,7 +43,7 @@ export function buildXangiCommands(platform?: ChatPlatform): string {
     if (process.env.TRIGGER_ENABLED === 'true') {
       parts.push(XANGI_COMMANDS_TRIGGER);
     }
-    parts.push(XANGI_COMMANDS_CHAT_PLATFORM);
+    parts.push(buildXangiCommandsChatPlatform(platform));
 
     if (platform === 'discord') {
       parts.push(XANGI_COMMANDS_DISCORD);
@@ -62,6 +65,7 @@ export {
   XANGI_COMMANDS_COMMON,
   XANGI_COMMANDS_TRIGGER,
   XANGI_COMMANDS_CHAT_PLATFORM,
+  buildXangiCommandsChatPlatform,
   XANGI_COMMANDS_DISCORD,
   XANGI_COMMANDS_SLACK,
   XANGI_COMMANDS_WEB,

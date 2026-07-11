@@ -26,6 +26,7 @@ export const ALLOWED_ENV_KEYS = [
   'DATA_DIR',
   'XANGI_TOOL_SERVER',
   'XANGI_CHANNEL_ID',
+  'XANGI_PLATFORM',
 ];
 
 /**

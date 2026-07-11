@@ -22,6 +22,20 @@ interface Schedule {
   label?: string;
 }
 
+type SchedulePlatform = Schedule['platform'];
+
+function isSchedulePlatform(value: string): value is SchedulePlatform {
+  return value === 'discord' || value === 'slack';
+}
+
+function resolveSchedulePlatform(flags: Record<string, string>): SchedulePlatform {
+  const value = flags['platform'] || process.env.XANGI_PLATFORM || 'discord';
+  if (!isSchedulePlatform(value)) {
+    throw new Error(`--platform must be discord or slack: ${value}`);
+  }
+  return value;
+}
+
 function getScheduleFilePath(): string {
   const workdir = process.env.WORKSPACE_PATH || process.cwd();
   const dataDir = process.env.DATA_DIR || join(workdir, '.xangi');
@@ -61,7 +75,7 @@ async function scheduleList(): Promise<string> {
 async function scheduleAdd(flags: Record<string, string>): Promise<string> {
   const input = flags['input'];
   const channelId = flags['channel'];
-  const platform = (flags['platform'] || 'discord') as 'discord' | 'slack';
+  const platform = resolveSchedulePlatform(flags);
 
   if (!input) throw new Error('--input is required');
   if (!channelId) throw new Error('--channel is required');

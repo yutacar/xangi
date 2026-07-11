@@ -44,6 +44,7 @@ Channels enabled with `/autoreply` will respond without requiring a mention. The
 When a Discord channel has a topic (description) set, its content is automatically injected into the prompt.
 
 This allows you to provide different context or instructions to the AI for each channel.
+Messages inside Discord threads inherit the parent channel topic. The conversation session and run lock still use the thread ID, but prompt instructions come from the parent channel.
 
 ### How to Configure
 
@@ -456,6 +457,7 @@ CHANNEL_OVERRIDES={"channelId":{"backend":"local-llm","model":"nemotron-3-nano"}
 #### Persistence
 
 Settings changed with `/backend set` are automatically saved to `CHANNEL_OVERRIDES` in `.env` and persist across restarts.
+Inside Discord threads, `/backend` and `/llmmode` read and write the parent channel's `CHANNEL_OVERRIDES`. Conversation sessions and run locks remain isolated by thread ID; only backend/model settings inherit from the parent channel.
 
 In a Docker environment, `.env` lives outside the container and cannot be modified by the AI (Claude Code, etc.).
 
@@ -478,7 +480,8 @@ Use `/autoreply mode:on|off|default|show` to inspect or configure mention-free a
 To disable this command, set `ALLOW_AUTOREPLY_COMMAND=false` in `.env` (default: enabled).
 
 Use `/threadmode mode:on|off|default|show` to inspect or toggle this channel's Discord per-message thread reply mode while the bot is running (no restart needed, persisted to `settings.json`). `default` removes the channel override and falls back to the global `DISCORD_REPLY_IN_THREAD` default.
-For messages received inside an existing Discord thread, xangi automatically injects the thread starter message as `🧵 スレッド元`. This keeps the original parent-channel topic available even when thread-local history does not include the starter message.
+For messages received inside an existing Discord thread, xangi automatically injects the thread starter message as `🧵 スレッド元`. This keeps the original parent-channel starter message available even when thread-local history does not include it.
+Inside Discord threads, `/autoreply`, `/notify`, `/threadmode`, and channel topic injection inherit the parent channel settings.
 To disable this command, set `ALLOW_THREAD_MODE_COMMAND=false` in `.env` (default: enabled).
 
 Use `/notify` to configure separate completion notifications for long Discord turns per channel. `DISCORD_COMPLETION_NOTIFY` is the startup default, while channel overrides are stored in `settings.json`. This applies only to normal Discord message turns; scheduler-triggered turns do not send completion notifications.
@@ -1123,7 +1126,7 @@ To modify the whitelist, edit `ALLOWED_ENV_KEYS` in `src/safe-env.ts`.
 | `TIMEOUT_EXTEND_ENABLED`     | Enable / disable the `延長` button                                                                                             | `true`                  |
 | `ALLOWED_BACKENDS`           | Allowed backends for `/backend` switching (comma-separated). If unset, all backends are allowed                                | all backends            |
 | `ALLOWED_MODELS`             | Allowed models for `/backend` switching (comma-separated)                                                                      | -                       |
-| `CHANNEL_OVERRIDES`          | Per-channel backend settings (JSON)                                                                                            | -                       |
+| `CHANNEL_OVERRIDES`          | Per-channel backend settings (JSON). Discord threads inherit the parent channel's entry                                                   | -                       |
 | `ANTHROPIC_API_KEY`          | Anthropic API key passed only to the Claude Code backend                                                                       | -                       |
 | `CLAUDE_CODE_BARE`           | Pass `--bare` to Claude Code and force API-key auth instead of OAuth/keychain auth                                             | `false`                 |
 | `CLAUDE_CODE_MAX_BUDGET_USD` | Pass `--max-budget-usd` to Claude Code to cap API spend                                                                        | -                       |
