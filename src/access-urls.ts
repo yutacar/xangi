@@ -56,11 +56,25 @@ async function probeTailscale(): Promise<TailscaleInfo | null> {
 }
 
 /**
+ * bind host が loopback（localhost からのみ到達可能）かどうか。
+ * 0.0.0.0 / :: / 未指定は全インターフェース bind 扱いで false を返す。
+ */
+export function isLoopbackHost(host?: string): boolean {
+  if (!host) return false;
+  const h = host.trim().toLowerCase();
+  return h === '127.0.0.1' || h === 'localhost' || h === '::1';
+}
+
+/**
  * 指定 port のアクセス URL 候補を返す（重複なし、localhost を先頭）。
  * 例: ['http://localhost:18889', 'http://spark-edbc:18889', 'http://100.86.210.85:18889']
+ *
+ * host に loopback（127.0.0.1 / localhost / ::1）を渡した場合は、
+ * LAN / Tailscale 経由では到達できないため localhost のみ返す（Tailscale の probe もしない）。
  */
-export async function resolveAccessUrls(port: number): Promise<string[]> {
+export async function resolveAccessUrls(port: number, host?: string): Promise<string[]> {
   const urls: string[] = [`http://localhost:${port}`];
+  if (isLoopbackHost(host)) return urls;
   const ts = await probeTailscale();
   if (!ts) return urls;
   if (ts.hostname) urls.push(`http://${ts.hostname}:${port}`);

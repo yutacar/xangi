@@ -1076,8 +1076,10 @@ export function startWebChat(options: WebChatOptions): void {
 
   server.listen(port, host, () => {
     console.log(`[web-chat] Chat UI: http://localhost:${port}`);
-    // Tailscale が動いてれば LAN/Tailnet 経由のアクセス URL も出す（best-effort）
-    resolveAccessUrls(port)
+    // Tailscale が動いてれば LAN/Tailnet 経由のアクセス URL も出す（best-effort）。
+    // host を loopback に絞っている場合は LAN/Tailscale 経由では到達できないので、
+    // 誤誘導にならないよう localhost のみ表示する。
+    resolveAccessUrls(port, host)
       .then((urls) => {
         console.log(formatAccessUrls('web-chat', urls));
         // pull 型 events SSE の URL も併せて出す。consumer (pet 等) はこれに繋ぐ。

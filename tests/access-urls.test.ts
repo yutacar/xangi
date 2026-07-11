@@ -97,6 +97,54 @@ describe('resolveAccessUrls', () => {
     const urls = await resolveAccessUrls(18889);
     expect(urls).toEqual(['http://localhost:18889']);
   });
+
+  it('host が loopback なら Tailscale を probe せず localhost のみ返す', async () => {
+    // Tailscale が使える状況でも loopback bind なら localhost だけを返す。
+    // execFile が一度も呼ばれないこと（= probe しない）も確認する。
+    setExecFileResponses([
+      { args: ['ip', '-4'], result: { stdout: '100.86.210.85\n' } },
+      {
+        args: ['status', '--self', '--json'],
+        result: { stdout: JSON.stringify({ Self: { HostName: 'spark-edbc' } }) },
+      },
+    ]);
+    mockExecFile.mockClear();
+    const { resolveAccessUrls } = await loadModule();
+    for (const host of ['127.0.0.1', 'localhost', '::1']) {
+      const urls = await resolveAccessUrls(18889, host);
+      expect(urls).toEqual(['http://localhost:18889']);
+    }
+    expect(mockExecFile).not.toHaveBeenCalled();
+  });
+
+  it('host が 0.0.0.0 / 未指定なら従来どおり LAN/Tailscale URL を含める', async () => {
+    setExecFileResponses([
+      { args: ['ip', '-4'], result: { stdout: '100.86.210.85\n' } },
+      {
+        args: ['status', '--self', '--json'],
+        result: { stdout: JSON.stringify({ Self: { HostName: 'spark-edbc' } }) },
+      },
+    ]);
+    const { resolveAccessUrls } = await loadModule();
+    const urls = await resolveAccessUrls(18889, '0.0.0.0');
+    expect(urls).toEqual([
+      'http://localhost:18889',
+      'http://spark-edbc:18889',
+      'http://100.86.210.85:18889',
+    ]);
+  });
+});
+
+describe('isLoopbackHost', () => {
+  it('loopback host を判定し、全インターフェース bind は false', async () => {
+    const { isLoopbackHost } = await loadModule();
+    for (const h of ['127.0.0.1', 'localhost', '::1', ' LOCALHOST ']) {
+      expect(isLoopbackHost(h)).toBe(true);
+    }
+    for (const h of ['0.0.0.0', '::', undefined, '', '192.168.1.10']) {
+      expect(isLoopbackHost(h)).toBe(false);
+    }
+  });
 });
 
 describe('formatAccessUrls', () => {
