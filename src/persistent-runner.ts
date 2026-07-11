@@ -67,6 +67,7 @@ export class PersistentRunner extends EventEmitter implements AgentRunner {
   private resumeSessionId?: string; // プロセス再起動時に --resume で復元するセッションID
   private channelId?: string; // トランスクリプトログ用
   private appSessionId?: string; // xangi側のセッションID
+  private platform?: ChatPlatform;
   private effort?: string; // Claude Code の --effort オプション
   private bare: boolean;
   private maxBudgetUsd?: string;
@@ -88,6 +89,7 @@ export class PersistentRunner extends EventEmitter implements AgentRunner {
     this.skipPermissions = options?.skipPermissions ?? false;
     this.systemPrompt = buildPersistentSystemPrompt(options?.platform);
     this.channelId = options?.channelId;
+    this.platform = options?.platform;
     this.effort = options?.effort;
     this.bare = process.env.CLAUDE_CODE_BARE === 'true';
     this.maxBudgetUsd = process.env.CLAUDE_CODE_MAX_BUDGET_USD?.trim() || undefined;
@@ -262,7 +264,7 @@ export class PersistentRunner extends EventEmitter implements AgentRunner {
   }
 
   private buildEnv(): NodeJS.ProcessEnv {
-    const env = buildCliEnv(this.channelId);
+    const env = buildCliEnv(this.channelId, this.platform);
     if (process.env.ANTHROPIC_API_KEY) {
       env.ANTHROPIC_API_KEY = process.env.ANTHROPIC_API_KEY;
     }

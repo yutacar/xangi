@@ -30,7 +30,12 @@ import {
 } from '../sessions.js';
 import { stripPromptMetadata } from '../session-title.js';
 import { deriveThreadTitle } from './thread-title.js';
-import { buildDiscordChannelContextLine, resolveConversationChannelId } from './thread-context.js';
+import {
+  buildDiscordChannelContextLine,
+  getDiscordChannelTopic,
+  resolveConversationChannelId,
+  resolveDiscordSettingsChannelId,
+} from './thread-context.js';
 import {
   attachPlatformMessageIdToLast,
   findEntryByPlatformMessageId,
@@ -59,6 +64,7 @@ export function shouldProcessDiscordMessage(input: { system?: boolean }): boolea
 
 interface DiscordMessageTarget {
   conversationChannelId: string;
+  settingsChannelId: string;
   createdThreadName: string | null;
   outputChannel: {
     send: (options: unknown) => Promise<Message>;
@@ -110,12 +116,14 @@ async function resolveDiscordMessageTarget(
   }
 
   const conversationChannelId = resolveConversationChannelId(channelId, newThread?.id);
+  const settingsChannelId = resolveDiscordSettingsChannelId(channelId, message.channel);
   const outputChannel = (newThread ?? (message.channel as unknown)) as {
     send: (options: unknown) => Promise<Message>;
   };
 
   return {
     conversationChannelId,
+    settingsChannelId,
     createdThreadName: newThread?.name ?? null,
     outputChannel,
     sendInitial: (options: Parameters<Message['reply']>[0]) =>
@@ -145,6 +153,7 @@ export async function processPrompt(
   // MessageCreate 側でスレッド作成を済ませ、確定済みの runKey を渡す。
   // 以降のセッション / runner / timeout UI / Stop はこのキーに揃える。
   const conversationChannelId = target.conversationChannelId;
+  const settingsChannelId = target.settingsChannelId;
   try {
     console.log(
       `[xangi] Processing message in channel ${channelId}, runKey ${conversationChannelId}`
@@ -292,6 +301,7 @@ export async function processPrompt(
             skipPermissions,
             sessionId,
             channelId: conversationChannelId,
+            settingsChannelId,
             appSessionId,
           }
         );
@@ -316,6 +326,7 @@ export async function processPrompt(
             skipPermissions,
             sessionId,
             channelId: conversationChannelId,
+            settingsChannelId,
             appSessionId,
           }
         );
@@ -421,7 +432,7 @@ export async function processPrompt(
     const completionNotification = buildCompletionNotification({
       mode: getChannelCompletionNotifyMode(
         settings,
-        conversationChannelId,
+        settingsChannelId,
         config.discord.completionNotifyMode ?? 'message'
       ),
       elapsedMs: Date.now() - startedAt,
@@ -736,9 +747,9 @@ export function registerDiscordMessageHandlers(deps: MessageHandlerDeps): void {
 
     // チャンネルトピック（概要）をプロンプトに注入
     if (config.discord.injectChannelTopic !== false) {
-      const channel = message.channel;
-      if ('topic' in channel && channel.topic) {
-        prompt += `\n\n[チャンネルルール（必ず従うこと）]\n${channel.topic}`;
+      const topic = getDiscordChannelTopic(message.channel);
+      if (topic) {
+        prompt += `\n\n[チャンネルルール（必ず従うこと）]\n${topic}`;
       }
     }
 

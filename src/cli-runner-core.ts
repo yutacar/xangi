@@ -67,6 +67,7 @@ export abstract class CliRunnerBase extends EventEmitter implements AgentRunner 
   protected readonly timeoutMs: number;
   protected readonly workdir?: string;
   protected readonly skipPermissions: boolean;
+  private readonly platform?: BaseRunnerOptions['platform'];
   protected currentProcess: ChildProcess | null = null;
   /** チャンネル別タイムアウト管理（UI の延長 / 残り表示 / 自動 kill 連動） */
   protected readonly timeoutController: TimeoutController;
@@ -86,6 +87,7 @@ export abstract class CliRunnerBase extends EventEmitter implements AgentRunner 
     this.timeoutMs = options?.timeoutMs ?? DEFAULT_TIMEOUT_MS;
     this.workdir = options?.workdir;
     this.skipPermissions = options?.skipPermissions ?? false;
+    this.platform = options?.platform;
     this.timeoutController = new TimeoutController({ baseTimeoutMs: this.timeoutMs });
     for (const evt of ['timeout-started', 'timeout-extended', 'timeout-cleared'] as const) {
       this.timeoutController.on(evt, (payload) => this.emit(evt, payload));
@@ -104,7 +106,7 @@ export abstract class CliRunnerBase extends EventEmitter implements AgentRunner 
 
   /** 子プロセス用の環境変数（runner 固有の追加があれば override） */
   protected buildEnv(channelId?: string): NodeJS.ProcessEnv {
-    return buildCliEnv(channelId);
+    return buildCliEnv(channelId, this.platform);
   }
 
   protected logExecution(kind: 'Executing' | 'Streaming', options?: RunOptions): void {

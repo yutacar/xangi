@@ -42,7 +42,7 @@ export function shouldProcessSlackMessage(
     hasActiveThreadSession?: boolean;
   }
 ): boolean {
-  if (input.subtype) return false;
+  if (input.subtype && !['file_share', 'me_message'].includes(input.subtype)) return false;
   if (input.channelType === 'im') return true;
   if (input.threadTs && input.hasActiveThreadSession) return true;
   return slackConfig.autoReplyChannels?.includes(input.channel) ?? false;

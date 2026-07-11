@@ -44,6 +44,7 @@ import {
 import { discordToolHistoryByMessageId } from './ui.js';
 import { formatToolHistoryDisclosure } from '../tool-history.js';
 import { waitBeforeFollowupDiscordSend } from './send-delay.js';
+import { resolveDiscordSettingsChannelId } from './thread-context.js';
 
 /** スキル一覧を保持する可変参照。`/skills` での再読込を呼び出し元と共有する */
 export interface SkillsRef {
@@ -361,6 +362,7 @@ async function handleSkillCommand(
   agentRunner: AgentRunner,
   config: Config,
   channelId: string,
+  settingsChannelId: string,
   skillName: string
 ) {
   const args = interaction.options.getString('args') || '';
@@ -376,6 +378,7 @@ async function handleSkillCommand(
       skipPermissions,
       sessionId,
       channelId,
+      settingsChannelId,
       appSessionId,
     });
 
@@ -627,6 +630,13 @@ export function createInteractionHandler(
     }
 
     const channelId = interaction.channelId;
+    const settingsChannelId = resolveDiscordSettingsChannelId(
+      channelId,
+      (interaction.channel ?? {}) as {
+        isThread?: () => boolean;
+        parentId?: string | null;
+      }
+    );
 
     if (interaction.commandName === 'new') {
       deleteSession(channelId);
@@ -656,13 +666,17 @@ export function createInteractionHandler(
         DiscordCompletionNotifyMode | 'default' | 'show';
       const settings = loadSettings();
       const defaultMode = config.discord.completionNotifyMode ?? 'message';
-      const currentOverride = settings.discordCompletionNotifyChannels?.[channelId];
+      const currentOverride = settings.discordCompletionNotifyChannels?.[settingsChannelId];
 
       if (mode === 'show') {
-        const effectiveMode = getChannelCompletionNotifyMode(settings, channelId, defaultMode);
+        const effectiveMode = getChannelCompletionNotifyMode(
+          settings,
+          settingsChannelId,
+          defaultMode
+        );
         const thresholdMs = config.discord.completionNotifyAfterMs ?? 10_000;
         const lines = [
-          `🔔 完了通知設定 (<#${channelId}>)`,
+          `🔔 完了通知設定 (<#${settingsChannelId}>)`,
           `- 適用中: \`${effectiveMode}\``,
           `- チャンネル設定: ${currentOverride ? `\`${currentOverride}\`` : 'なし'}`,
           `- 起動時デフォルト: \`${defaultMode}\``,
@@ -675,22 +689,22 @@ export function createInteractionHandler(
 
       const nextChannels = { ...(settings.discordCompletionNotifyChannels ?? {}) };
       if (mode === 'default') {
-        delete nextChannels[channelId];
+        delete nextChannels[settingsChannelId];
       } else {
-        nextChannels[channelId] = mode;
+        nextChannels[settingsChannelId] = mode;
       }
 
       const saved = saveSettings({
         discordCompletionNotifyChannels:
           Object.keys(nextChannels).length > 0 ? nextChannels : undefined,
       });
-      const effectiveMode = getChannelCompletionNotifyMode(saved, channelId, defaultMode);
+      const effectiveMode = getChannelCompletionNotifyMode(saved, settingsChannelId, defaultMode);
       const action =
         mode === 'default'
           ? `起動時デフォルト \`${defaultMode}\` に戻しました`
           : `\`${mode}\` に設定しました`;
       await interaction.reply(
-        `🔔 <#${channelId}> の完了通知を${action}\n現在の適用値: \`${effectiveMode}\`\n対象: 通常の Discord メッセージターンのみ（スケジュール起点は通知なし）`
+        `🔔 <#${settingsChannelId}> の完了通知を${action}\n現在の適用値: \`${effectiveMode}\`\n対象: 通常の Discord メッセージターンのみ（スケジュール起点は通知なし）`
       );
       return;
     }
@@ -699,11 +713,11 @@ export function createInteractionHandler(
       const sub = interaction.options.getSubcommand();
 
       if (sub === 'show') {
-        const resolved = agentRunner.resolveForChannel(channelId);
-        const override = resolver.getChannelOverride(channelId);
+        const resolved = agentRunner.resolveForChannel(settingsChannelId);
+        const override = resolver.getChannelOverride(settingsChannelId);
         const defaultRes = resolver.getDefault();
         const lines = [
-          `**現在のバックエンド設定** (<#${channelId}>)`,
+          `**現在のバックエンド設定** (<#${settingsChannelId}>)`,
           `- バックエンド: **${getBackendDisplayName(resolved.backend)}**`,
         ];
         if (resolved.model) lines.push(`- モデル: ${resolved.model}`);
@@ -796,14 +810,14 @@ export function createInteractionHandler(
         }
 
         // channelOverrides に保存
-        resolver.setChannelOverride(channelId, {
+        resolver.setChannelOverride(settingsChannelId, {
           backend: backendValue,
           model: modelValue,
           effort: effortValue,
         });
 
         // セッション & ランナー破棄
-        agentRunner.switchBackend(channelId);
+        agentRunner.switchBackend(settingsChannelId);
 
         // 切り替え結果を明確に表示
         const display = getBackendDisplayName(backendValue);
@@ -831,8 +845,8 @@ export function createInteractionHandler(
       }
 
       if (sub === 'reset') {
-        resolver.deleteChannelOverride(channelId);
-        agentRunner.switchBackend(channelId);
+        resolver.deleteChannelOverride(settingsChannelId);
+        agentRunner.switchBackend(settingsChannelId);
         const defaultRes = resolver.getDefault();
         await interaction.reply(
           `🔄 デフォルト (**${getBackendDisplayName(defaultRes.backend)}**) に戻しました。新しいセッションを開始します。`
@@ -939,6 +953,7 @@ export function createInteractionHandler(
           skipPermissions: true,
           sessionId,
           channelId,
+          settingsChannelId,
           appSessionId,
         });
 
@@ -989,7 +1004,7 @@ export function createInteractionHandler(
         await interaction.reply({ content: 'このコマンドは無効です', ephemeral: true });
         return;
       }
-      const chId = interaction.channelId;
+      const chId = settingsChannelId;
       const mode = interaction.options.getString('mode', true) as 'show' | 'on' | 'off' | 'default';
       const settings = loadSettings();
       const channels = { ...(settings.discordAutoReplyChannels ?? {}) };
@@ -1070,13 +1085,13 @@ export function createInteractionHandler(
       const mode = interaction.options.getString('mode', true) as 'show' | 'on' | 'off' | 'default';
       const settings = loadSettings();
       const defaultEnabled = config.discord.replyInThread ?? false;
-      const currentOverride = settings.discordThreadModeChannels?.[channelId];
+      const currentOverride = settings.discordThreadModeChannels?.[settingsChannelId];
 
       if (mode === 'show') {
-        const current = getChannelThreadMode(settings, channelId, defaultEnabled);
+        const current = getChannelThreadMode(settings, settingsChannelId, defaultEnabled);
         const status = current ? 'ON' : 'OFF';
         await interaction.reply(
-          `🧵 Discord スレッドモード (<#${channelId}>): ${status}\n` +
+          `🧵 Discord スレッドモード (<#${settingsChannelId}>): ${status}\n` +
             `- チャンネル設定: ${currentOverride === undefined ? 'なし' : currentOverride ? '`on`' : '`off`'}\n` +
             `- 起動時デフォルト: \`${defaultEnabled ? 'on' : 'off'}\`\n` +
             `- ON: 通常メッセージへの応答を発言ごとのスレッドに投稿\n` +
@@ -1089,22 +1104,22 @@ export function createInteractionHandler(
 
       const nextChannels = { ...(settings.discordThreadModeChannels ?? {}) };
       if (mode === 'default') {
-        delete nextChannels[channelId];
+        delete nextChannels[settingsChannelId];
       } else {
-        nextChannels[channelId] = mode === 'on';
+        nextChannels[settingsChannelId] = mode === 'on';
       }
 
       const saved = saveSettings({
         discordThreadModeChannels: Object.keys(nextChannels).length > 0 ? nextChannels : undefined,
       });
 
-      const effective = getChannelThreadMode(saved, channelId, defaultEnabled);
+      const effective = getChannelThreadMode(saved, settingsChannelId, defaultEnabled);
       const action =
         mode === 'default'
           ? `起動時デフォルト \`${defaultEnabled ? 'on' : 'off'}\` に戻しました`
           : `\`${mode}\` に設定しました`;
       await interaction.reply(
-        `🧵 <#${channelId}> の Discord スレッドモードを${action}\n現在の適用値: \`${effective ? 'on' : 'off'}\``
+        `🧵 <#${settingsChannelId}> の Discord スレッドモードを${action}\n現在の適用値: \`${effective ? 'on' : 'off'}\``
       );
       return;
     }
@@ -1114,7 +1129,7 @@ export function createInteractionHandler(
         await interaction.reply({ content: 'このコマンドは無効です', ephemeral: true });
         return;
       }
-      const chId = interaction.channelId;
+      const chId = settingsChannelId;
       const mode = interaction.options.getString('mode', true) as
         'agent' | 'lite' | 'chat' | 'default' | 'show';
 
@@ -1197,7 +1212,14 @@ export function createInteractionHandler(
 
     if (interaction.commandName === 'skill') {
       const skillName = interaction.options.getString('name', true);
-      await handleSkillCommand(interaction, agentRunner, config, channelId, skillName);
+      await handleSkillCommand(
+        interaction,
+        agentRunner,
+        config,
+        channelId,
+        settingsChannelId,
+        skillName
+      );
       return;
     }
 
@@ -1207,7 +1229,14 @@ export function createInteractionHandler(
     );
 
     if (matchedSkill) {
-      await handleSkillCommand(interaction, agentRunner, config, channelId, matchedSkill.name);
+      await handleSkillCommand(
+        interaction,
+        agentRunner,
+        config,
+        channelId,
+        settingsChannelId,
+        matchedSkill.name
+      );
       return;
     }
   };

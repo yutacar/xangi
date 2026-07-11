@@ -16,6 +16,7 @@ export interface BaseRunnerOptions {
   timeoutMs?: number;
   workdir?: string;
   skipPermissions?: boolean;
+  platform?: ChatPlatform;
 }
 
 // プロンプトを再エクスポート（既存のimportを壊さないため）

@@ -69,6 +69,7 @@ Behavior:
 
 - Per-channel / per-thread session isolation (`contextKey = discord:<channelId>`; when thread-reply mode creates a new thread, `discord:<threadId>`)
 - Discord API posting targets the parent channel or the created thread, while runner / timeout / Stop / processing state use the resolved `runKey = contextKey`, so separate threads in the same Discord channel do not share an execution slot
+- Per-channel settings inside Discord threads resolve through the parent channel ID. This means `CHANNEL_OVERRIDES` (`/backend` / `/llmmode`), `settings.json` (`/autoreply` / `/notify` / `/threadmode`), and channel topic injection inherit the parent channel configuration
 - For messages inside an existing Discord thread, xangi injects the starter message from the parent channel as `🧵 スレッド元` so the agent focuses on the thread's original topic even when thread-local history does not include it
 - Threads, attachments, and reactions supported
 - Streaming display uses `stream-session.ts` (a core shared with Slack / Web) to unify thinking display and update throttling, and refreshes the button UI at 1-second granularity via `message.edit`
@@ -79,6 +80,7 @@ Behavior:
 Based on `@slack/bolt`.
 
 - Handles `app_mention` and DMs; per-thread session isolation (`contextKey = <channelId>:<threadTs>`)
+- Handles normal `message` events, user `/me` posts (`me_message`), and attachment-bearing `file_share` events, while ignoring other Slack system subtypes such as channel renames
 - Handles follow-up messages without mentions inside active threads that xangi started from a mention, while ignoring unrelated thread replies in non-auto-reply channels
 - Keeps Slack API posting on `channelId`, but uses `runKey = contextKey` for runner / timeout / Stop / processing state so separate threads in the same Slack channel do not share an execution slot
 - Prevents duplicate runs with a per-`runKey` busy lock, message timestamp de-dupe, and message-handler bot-mention skip so `app_mention` owns mention events
@@ -216,7 +218,7 @@ Message received
 
 BackendResolver priority:
 
-1. channelOverrides set via `/backend set` (in-memory, persisted to CHANNEL_OVERRIDES in `.env`)
+1. channelOverrides set via `/backend set` (in-memory, persisted to CHANNEL_OVERRIDES in `.env`; Discord threads resolve through the parent channel ID)
 2. Defaults from `.env` (`AGENT_BACKEND`, `AGENT_MODEL`)
 
 ### System Prompt (base-runner.ts)
@@ -839,7 +841,7 @@ Scraping paths from text (layer 2) is a rescue, not the intended path. Local LLM
 
 #### Environment file persistence and Docker security design
 
-`/autoreply`, `/notify`, and `/threadmode` use `settings.json`; `/respondtobots`, `/backend`, and `/llmmode` use `.env` write-back. `.env` persistence has **two layers** that are easy to confuse, so we spell them out:
+`/autoreply`, `/notify`, and `/threadmode` use `settings.json`; `/respondtobots`, `/backend`, and `/llmmode` use `.env` write-back. When these slash commands run inside a Discord thread, they read and write the parent channel's settings rather than the thread ID. `.env` persistence has **two layers** that are easy to confuse, so we spell them out:
 
 **Layer 1: Startup-time env var injection (always active)**
 
