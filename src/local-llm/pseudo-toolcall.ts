@@ -199,6 +199,7 @@ const READ_ONLY_RESCUE_TOOLS = new Set([
   'grep',
   'tool_search',
   'discord_history',
+  'discord_message',
   'web_history',
   'slack_history',
   'slack_channels',
@@ -210,6 +211,7 @@ const READ_ONLY_RESCUE_TOOLS = new Set([
 
 const SAFE_XANGI_SUBCOMMANDS = new Set([
   'discord_history',
+  'discord_message',
   'web_history',
   'slack_history',
   'slack_channels',

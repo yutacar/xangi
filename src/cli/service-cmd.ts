@@ -2,6 +2,17 @@ import { existsSync, readFileSync } from 'fs';
 import { basename, dirname, join } from 'path';
 import { fileURLToPath } from 'url';
 import { spawnSync } from 'child_process';
+import { arch, homedir, platform } from 'os';
+import { resolveAppLayout } from '../installer/layout.js';
+import type { ServiceAdapter } from '../installer/platform/service.js';
+import { SETUP_CONFIG_PATH_ENV, SETUP_STATE_DIR_ENV } from '../installer/runtime-config.js';
+import { parseSetupConfig } from '../setup/schema.js';
+import { resolveManagedLifecycle } from './update-cmd.js';
+
+export interface ServiceCommandDependencies {
+  installationKind?: 'checkout' | 'managed';
+  managedService?: ServiceAdapter;
+}
 
 function stringFlag(flags: Record<string, string | boolean>, key: string): string | undefined {
   const value = flags[key];
@@ -68,11 +79,41 @@ function runPm2(
   const proc = spawnSync('pm2', args, {
     cwd: projectDir(flags),
     encoding: 'utf8',
+    env: checkoutRuntimeEnv(flags),
   });
   return {
     status: proc.status ?? 1,
     output: `${proc.stdout || ''}${proc.stderr || ''}`.trim(),
   };
+}
+
+function checkoutRuntimeEnv(flags: Record<string, string | boolean>): NodeJS.ProcessEnv {
+  const currentPlatform = platform();
+  if (currentPlatform !== 'darwin' && currentPlatform !== 'linux') return process.env;
+  const layout = resolveAppLayout({
+    platform: currentPlatform,
+    arch: arch(),
+    homeDir: homedir(),
+    xdgDataHome: process.env.XDG_DATA_HOME,
+    xdgConfigHome: process.env.XDG_CONFIG_HOME,
+    xdgStateHome: process.env.XDG_STATE_HOME,
+  });
+  if (!existsSync(layout.configFile)) return process.env;
+  const dir = projectDir(flags);
+  const isCheckout = existsSync(join(dir, '.git'));
+  const explicitStateDir =
+    readDotEnvValue(dir, 'DATA_DIR') || (isCheckout ? undefined : process.env.DATA_DIR);
+  const setup = parseSetupConfig(JSON.parse(readFileSync(layout.configFile, 'utf8')) as unknown);
+  const stateDir =
+    explicitStateDir || (isCheckout ? join(setup.workspacePath, '.xangi') : layout.stateDir);
+  const env: NodeJS.ProcessEnv = {
+    ...process.env,
+    [SETUP_CONFIG_PATH_ENV]: layout.configFile,
+    [SETUP_STATE_DIR_ENV]: stateDir,
+  };
+  const name = stringFlag(flags, 'name');
+  if (name) env.XANGI_PROCESS_NAME = name;
+  return env;
 }
 
 function ensurePm2(): void {
@@ -82,20 +123,26 @@ function ensurePm2(): void {
   }
 }
 
-function pm2ProcessExists(name: string, flags: Record<string, string | boolean>): boolean {
-  return runPm2(['describe', name], flags).status === 0;
-}
-
 function isPm2StartupGuidance(output: string): boolean {
   return /\bsudo\s+env\b/.test(output) && /\bpm2\s+startup\b/.test(output);
 }
 
-function startFromPm2Config(flags: Record<string, string | boolean>): string {
+function replacePm2ProcessFromConfig(
+  flags: Record<string, string | boolean>,
+  name: string
+): string {
   const pm2ConfigPath = join(projectDir(flags), 'ecosystem.config.cjs');
   if (!existsSync(pm2ConfigPath)) {
     throw new Error(`ecosystem.config.cjs が見つかりません: ${pm2ConfigPath}`);
   }
-  const result = runPm2(['start', 'ecosystem.config.cjs'], flags);
+  const existing = runPm2(['describe', name], flags);
+  if (existing.status === 0) {
+    const removed = runPm2(['delete', name], flags);
+    if (removed.status !== 0) {
+      throw new Error(removed.output || `pm2 delete ${name} failed`);
+    }
+  }
+  const result = runPm2(['start', 'ecosystem.config.cjs', '--only', name], flags);
   if (result.status !== 0) {
     throw new Error(result.output || 'pm2 start ecosystem.config.cjs failed');
   }
@@ -104,7 +151,8 @@ function startFromPm2Config(flags: Record<string, string | boolean>): string {
 
 export async function serviceCmd(
   action: string,
-  flags: Record<string, string | boolean>
+  flags: Record<string, string | boolean>,
+  dependencies: ServiceCommandDependencies = {}
 ): Promise<string> {
   if (!action || action === 'help') {
     return [
@@ -114,28 +162,34 @@ export async function serviceCmd(
     ].join('\n');
   }
 
+  const installationKind =
+    dependencies.installationKind ??
+    (process.env.XANGI_INSTALLATION_KIND === 'managed' ? 'managed' : 'checkout');
+  if (installationKind === 'managed') {
+    const service = dependencies.managedService ?? (await resolveManagedLifecycle()).service;
+    if (action === 'restart') {
+      await service.restart();
+      return 'Restarted xangi service';
+    }
+    if (action === 'status') {
+      const status = await service.status();
+      return `${status.running ? 'running' : 'stopped'}${status.detail ? `: ${status.detail}` : ''}`;
+    }
+    throw new Error('Usage for managed xangi: xangi service <restart|status>');
+  }
+
   ensurePm2();
   const name = resolveProcessName(flags);
   let result: { status: number; output: string };
 
   switch (action) {
     case 'start':
-      if (pm2ProcessExists(name, flags)) {
-        result = runPm2(['start', name], flags);
-      } else {
-        return startFromPm2Config(flags);
-      }
-      break;
+      return replacePm2ProcessFromConfig(flags, name);
     case 'stop':
       result = runPm2(['stop', name], flags);
       break;
     case 'restart':
-      if (pm2ProcessExists(name, flags)) {
-        result = runPm2(['restart', name], flags);
-      } else {
-        return startFromPm2Config(flags);
-      }
-      break;
+      return replacePm2ProcessFromConfig(flags, name);
     case 'status':
       result = runPm2(['describe', name], flags);
       break;

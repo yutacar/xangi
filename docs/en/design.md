@@ -68,7 +68,7 @@ Based on `discord.js` v14. Split into modules by responsibility:
 Behavior:
 
 - Per-channel / per-thread session isolation (`contextKey = discord:<channelId>`; when thread-reply mode creates a new thread, `discord:<threadId>`)
-- Discord API posting targets the parent channel or the created thread, while runner / timeout / Stop / processing state use the resolved `runKey = contextKey`, so separate threads in the same Discord channel do not share an execution slot
+- Discord API posting targets the parent channel or the created thread, while runner / timeout / Stop / processing state use the resolved `runKey = contextKey`, so separate threads in the same Discord channel do not share an execution slot. Thread prompts include both the parent channel name/ID and thread name/ID so the agent can target either one without another lookup
 - Per-channel settings inside Discord threads resolve through the parent channel ID. This means `CHANNEL_OVERRIDES` (`/backend` / `/llmmode`), `settings.json` (`/autoreply` / `/notify` / `/threadmode`), and channel topic injection inherit the parent channel configuration
 - For messages inside an existing Discord thread, xangi injects the starter message from the parent channel as `🧵 スレッド元` so the agent focuses on the thread's original topic even when thread-local history does not include it
 - Threads, attachments, and reactions supported
@@ -99,6 +99,28 @@ Lightweight server based on `http.createServer` (no Express dependency).
 - File upload / download accepted extensions are gated by `WEB_CHAT_UPLOAD_ACCEPT` / `WEB_CHAT_DOWNLOAD_ACCEPT`
 - `GET /api/sessions` includes an `activity` snapshot for each managed session. `activity-store.ts` keeps the current turn state, summary, recent tool lines, and elapsed seconds in process memory
 - `/monitor` is a read-only session monitoring page. It polls the same `/api/sessions` endpoint every 2 seconds and sorts running sessions first. Rows and text are sized for phone and Even G2 viewing
+
+### macOS, Linux, and WSL2 setup and update core
+
+- `installer/layout.ts` separates application versions from workspace, state, and configuration. A future Windows adapter uses the same logical layout
+- `installer/manifest.ts` and `updater.ts` provide Ed25519 and SHA-256 verification, an update lock, staging, and atomic current switching. Initial service activation performs a health check and rolls back on failure
+- `installer/platform/darwin.ts` owns LaunchAgent behavior, keeping OS-specific lifecycle code outside the shared updater
+- `installer/platform/linux.ts` owns the XDG layout and `systemd --user` lifecycle. WSL2 requires systemd; setup URLs use `wslview` when available and otherwise open in the Windows browser through `cmd.exe`
+- `setup/guided-onboarding.ts` deterministically detects supported agent CLIs through `PATH` and `--version`. It sends only a short start prompt to the agent UI, stores detailed instructions in a temporary mode-0600 file, and removes that file when the agent exits. The agent helps the user decide, while xangi's `setup --apply` and `setup --complete` remain responsible for configuration persistence, workspace-mode validation, repository-template application, and BOOTSTRAP completion checks. Additional xangi configuration reads official documentation from the distribution rather than the workspace and gives installation-specific startup guidance for checkouts and managed distributions
+- `onboarding.json` atomically records `preflight`, `bootstrap_in_progress`, and `minimum_ready` in the configuration area as the source of truth for resume and diagnostics. There is no browser UI that replaces AI onboarding; when no supported agent is available it prints installation guidance and exits
+- `secrets.json` is atomically stored with mode 0600 in the OS-specific configuration area. `xangi settings` opens a token-only temporary GUI on loopback with a one-time URL, Host validation, no-store, and CSP. It never sends stored values to the browser and closes after saving, keeping secrets out of the AI, workspace, setup JSON, and shell history
+- `packaging/bootstrap.sh` is published as the shared `install.sh` entry point for every supported operating system. It detects Darwin / Linux and arm64 / x64, then dispatches to the target installer in the same GitHub Release. WSL2 follows the Linux path
+- `packaging/build-installer.mjs` verifies the signed manifest and bundle during the release build, then embeds the manifest and artifact SHA-256 values plus the Ed25519 public key into each target installer. Later updates use the persisted public key
+- `.github/workflows/release-assets.yml` builds Darwin / Linux × arm64 / x64 bundles on native runners and limits the Ed25519 private key to the final manifest-signing job. Each installer receives a version-pinned artifact URL and a `releases/latest` manifest URL for update discovery, while bundles, manifests, installers, and checksums are attached to the same GitHub Release
+- `workspace-template.ts` resolves the selected GitHub repository branch to its latest commit at selection time, downloads the commit-pinned archive without Git, records repository, commit SHA, and archive SHA-256, and atomically seeds the empty workspace once. App updates never modify the user-owned workspace afterward
+- `platform/*-update.ts` manages a six-hour signed-channel check through LaunchAgent or a systemd user timer
+- `xangi uninstall` uses the existing update-scheduler and service adapters to stop and unregister them before removing only the application root. Configuration, state, and workspace live outside the app and are retained by default; only explicit `--purge --yes` also removes configuration and state. The workspace is never an uninstall target
+- the common setup config is consumed by both managed services and checkout PM2 services. The checkout ecosystem receives only the non-secret config and state paths
+- checkout `update` validates a clean worktree, branch, and upstream before `git pull --ff-only`, dependency installation, and build. `--managed` selects the signed managed updater
+- checkout `doctor` detects PM2 and realpath-compares the Web Chat workdir reported by `/api/sessions` with the saved setup config
+- A checkout's `bin/xangi` runs current source through local `tsx` and never selects an ignored, stale `dist/` tree. A distribution has no source tree, runs its bundled `dist/`, and allowlists the README and user-facing documentation used as onboarding sources
+- The standard `notion-sync/` path is a one-way mirror with the workspace as source of truth. It discovers safe Markdown and uses a path-to-page map in the state directory to create and update a Notion child-page hierarchy. The previous per-document manifest engine remains available only through an explicit compatibility option. The real Notion connection stays behind an adapter boundary
+- `notionSyncEnabled` is a global gate that defaults to off. Status and disable do not contact the Notion API, and a normal run is rejected before an adapter is created. Only an explicit `run --once` bypasses the gate; disabling preserves sync state and backups for a later resume
 
 ### LINE Bot Integration (line.ts)
 
@@ -181,6 +203,7 @@ events so upstream consumers (web-chat SSE / Discord bot / Slack bot) can refres
 - `onText` sets `streaming`
 - `onToolUse` sets `tool` and records recent tool lines
 - `onComplete` / cancel / error set `complete` / `aborted` / `error`
+- When a caller supplies `eventTextSanitizer`, activity and shared events receive sanitized display text while the raw Runner response remains available for transcripts
 - Snapshots are process-memory only. They are not restored after restart and do not write to `sessions.json` or transcripts
 - `GET /api/sessions` and the Even Terminal compatible `GET /api/sessions?provider=...` read the same activity data
 
@@ -515,8 +538,8 @@ Design rationale: Step A's skill hinting is usually decisive — by surfacing "w
 
 | Category                    | Allowed                                                                                                                                                                                      |
 | --------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Direct read-only tools      | `read` / `glob` / `grep` / `tool_search` / `discord_history` / `web_history` / `slack_history` / `discord_channels` / `discord_search` / `slack_channels` / `slack_search` / `schedule_list` |
-| `exec` / `bash` subcommands | Only commands starting with `xangi-cmd {discord_history,web_history,slack_history,discord_channels,discord_search,slack_channels,slack_search,schedule_list,system_settings}`                |
+| Direct read-only tools      | `read` / `glob` / `grep` / `tool_search` / `discord_history` / `discord_message` / `web_history` / `slack_history` / `discord_channels` / `discord_search` / `slack_channels` / `slack_search` / `schedule_list` |
+| `exec` / `bash` subcommands | Only commands starting with `xangi-cmd {discord_history,discord_message,web_history,slack_history,discord_channels,discord_search,slack_channels,slack_search,schedule_list,system_settings}`                |
 | Shell metacharacters        | If the command contains any of `\|` / `&` / `;` / `` ` `` / `$` / `<` / `>` / `$(...)` / `&&` / `\|\|` / `>` redirect → immediate reject                                                     |
 
 Anything else returns `{safe: false, reason}`, leading to an `unsafe_tool_in_pseudo_format` structured error that nudges the LLM toward the proper function_calling structure.

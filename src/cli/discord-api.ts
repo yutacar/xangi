@@ -218,6 +218,36 @@ async function discordHistory(
   return `📺 チャンネル履歴（${offsetLabel}）:\n${lines.join('\n')}`;
 }
 
+async function discordMessage(
+  flags: Record<string, string>,
+  context: DiscordCommandContext | undefined,
+  tracker: DiscordRateLimitTracker
+): Promise<string> {
+  const channelId = resolveChannelId(flags, context, 'discord_message');
+  const messageId = flags['message-id'];
+  if (!messageId) {
+    throw new ValidationError(
+      'discord_message: message-id が未指定です。`--message-id <メッセージID>` を付けてください。'
+    );
+  }
+
+  const message = (await discordFetch(
+    `/channels/${channelId}/messages/${messageId}`,
+    undefined,
+    tracker
+  )) as DiscordMessage;
+  const time = new Date(message.timestamp).toLocaleString('ja-JP', {
+    timeZone: 'Asia/Tokyo',
+  });
+  const content = message.content || '(添付ファイルのみ)';
+  const attachments =
+    message.attachments.length > 0
+      ? '\n' + message.attachments.map((a) => `  📎 ${a.filename} ${a.url}`).join('\n')
+      : '';
+
+  return `📨 Discordメッセージ全文:\n[${time}] (ID:${message.id}) ${message.author.username}: ${content}${attachments}`;
+}
+
 async function discordSend(
   flags: Record<string, string>,
   tracker: DiscordRateLimitTracker
@@ -495,6 +525,9 @@ export async function discordApi(
   switch (command) {
     case 'discord_history':
       result = await discordHistory(flags, context, tracker);
+      break;
+    case 'discord_message':
+      result = await discordMessage(flags, context, tracker);
       break;
     case 'discord_send':
       result = await discordSend(flags, tracker);

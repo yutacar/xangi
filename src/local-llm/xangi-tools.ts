@@ -79,6 +79,26 @@ const discordHistoryHandler: ToolHandler = {
   },
 };
 
+const discordMessageHandler: ToolHandler = {
+  name: 'discord_message',
+  description:
+    '履歴に表示されたメッセージIDを使い、特定のDiscordメッセージ本文を省略せず取得する。channel省略時は現在のチャンネルを使う。',
+  parameters: {
+    type: 'object',
+    properties: {
+      channel: { type: 'string', description: 'チャンネルID（省略時は現在のチャンネル）' },
+      'message-id': { type: 'string', description: '取得するメッセージID' },
+    },
+    required: ['message-id'],
+  },
+  async execute(args, context): Promise<ToolResult> {
+    const flags: Record<string, string> = { 'message-id': String(args['message-id']) };
+    if (args.channel) flags.channel = String(args.channel);
+    const env = context.channelId ? { XANGI_CHANNEL_ID: context.channelId } : undefined;
+    return runXangiCmd(['discord_message', ...flagsToArgs(flags)], env);
+  },
+};
+
 const discordSendHandler: ToolHandler = {
   name: 'discord_send',
   description: '指定チャンネルにメッセージを送信する。',
@@ -512,6 +532,7 @@ const slackDeleteHandler: ToolHandler = {
 export function getDiscordTools(): ToolHandler[] {
   return [
     discordHistoryHandler,
+    discordMessageHandler,
     discordSendHandler,
     discordChannelsHandler,
     discordSearchHandler,

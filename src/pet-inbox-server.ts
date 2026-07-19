@@ -27,6 +27,7 @@
 
 import type { IncomingMessage, ServerResponse } from 'http';
 import type { AgentRunner } from './agent-runner.js';
+import type { Config } from './config.js';
 import {
   WEB_CHAT_CONTEXT_PREFIX,
   createWebSession,
@@ -42,6 +43,11 @@ import {
 import { threadIdFor, turnIdFor, getEventsConfig } from './events-emitter.js';
 import { runWithBubbleEvents } from './bubble-events-runner.js';
 import { flowFromHostPlatform } from './inter-instance-chat/index.js';
+import {
+  appendReplySuggestionInstruction,
+  stripReplySuggestionMarkup,
+} from './reply-suggestions.js';
+import { loadReplySuggestionsEnabled } from './settings.js';
 
 const MAX_TEXT_LENGTH = 8000;
 const MAX_BODY_BYTES = 64 * 1024;
@@ -172,7 +178,11 @@ function webContextKey(appSessionId: string): string {
 export async function handlePetInboxRequest(
   req: IncomingMessage,
   res: ServerResponse,
-  agentRunner: AgentRunner
+  agentRunner: AgentRunner,
+  replySuggestions: Config['web'] = {
+    replySuggestions: false,
+    replySuggestionCount: 3,
+  }
 ): Promise<boolean> {
   const url = (req.url || '/').split('?')[0];
   if (req.method !== 'POST' || !isInboxPath(url)) return false;
@@ -267,9 +277,14 @@ export async function handlePetInboxRequest(
     threadLabel,
     platform: 'web' as const,
     userText: text,
+    eventTextSanitizer: stripReplySuggestionMarkup,
   };
 
-  const prompt = `[プラットフォーム: Web (${label})]\n${text}`;
+  let prompt = `[プラットフォーム: Web (${label})]\n${text}`;
+  const replySuggestionsEnabled = loadReplySuggestionsEnabled(replySuggestions.replySuggestions);
+  if (replySuggestionsEnabled) {
+    prompt = appendReplySuggestionInstruction(prompt, replySuggestions.replySuggestionCount);
+  }
 
   // 202 を即返す。応答は events SSE 経由で pet 側に届く。
   const { instanceId } = getEventsConfig();
@@ -300,7 +315,7 @@ export async function handlePetInboxRequest(
             if (!entry.title) {
               updateSessionTitle(appSessionId, text.slice(0, 50));
             }
-            flowFromHostPlatform(completedResult.result, 'agent');
+            flowFromHostPlatform(stripReplySuggestionMarkup(completedResult.result), 'agent');
           },
         },
         {

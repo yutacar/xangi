@@ -89,7 +89,9 @@ interface TestServer {
   close(): Promise<void>;
 }
 
-async function startTestServer(): Promise<TestServer> {
+async function startTestServer(
+  replySuggestions = { replySuggestions: true, replySuggestionCount: 3 }
+): Promise<TestServer> {
   const { handlePetInboxRequest } = await import('../src/pet-inbox-server.js');
   const captured: { last: RecordedRun | null } = { last: null };
   const runner = makeStubRunner({
@@ -99,7 +101,7 @@ async function startTestServer(): Promise<TestServer> {
   });
   const server: Server = createServer(async (req, res) => {
     try {
-      const handled = await handlePetInboxRequest(req, res, runner);
+      const handled = await handlePetInboxRequest(req, res, runner, replySuggestions);
       if (!handled) {
         res.writeHead(404);
         res.end('not found');
@@ -134,6 +136,7 @@ describe('pet-inbox-server', () => {
     process.env.XANGI_INSTANCE_ID = 'xangi-test';
     delete process.env.XANGI_PET_INBOX_TOKEN;
     delete process.env.XANGI_PET_INBOX_ENABLED;
+    delete process.env.XANGI_DEVICE_INBOX_ENABLED;
     delete process.env.XANGI_EVENTS_ENABLED;
     const { initSessions } = await import('../src/sessions.js');
     initSessions(dataDir);
@@ -146,6 +149,7 @@ describe('pet-inbox-server', () => {
     delete process.env.XANGI_INSTANCE_ID;
     delete process.env.XANGI_PET_INBOX_TOKEN;
     delete process.env.XANGI_PET_INBOX_ENABLED;
+    delete process.env.XANGI_DEVICE_INBOX_ENABLED;
     delete process.env.XANGI_EVENTS_ENABLED;
   });
 
@@ -164,6 +168,7 @@ describe('pet-inbox-server', () => {
     expect(server.lastRun).not.toBeNull();
     expect(server.lastRun!.prompt).toContain('hello pet');
     expect(server.lastRun!.prompt).toContain('[プラットフォーム: Web (Pet)]');
+    expect(server.lastRun!.prompt).toContain('<xangi_reply_suggestions>');
   });
 
   it('accepts device inbox POST and returns a filtered events URL', async () => {
@@ -180,6 +185,35 @@ describe('pet-inbox-server', () => {
     expect(server.lastRun).not.toBeNull();
     expect(server.lastRun!.prompt).toContain('hello glasses');
     expect(server.lastRun!.prompt).toContain('[プラットフォーム: Web (Device:g2)]');
+    expect(server.lastRun!.prompt).toContain('<xangi_reply_suggestions>');
+  });
+
+  it('uses Web reply suggestion settings for terminal inbox', async () => {
+    const res = await postJson(`${server.url}/api/terminal/inbox`, {
+      text: 'hello terminal',
+      source: 'even-g2',
+    });
+    expect(res.status).toBe(202);
+
+    await new Promise((r) => setTimeout(r, 50));
+    expect(server.lastRun).not.toBeNull();
+    expect(server.lastRun!.prompt).toContain('[プラットフォーム: Web (Terminal:even-g2)]');
+    expect(server.lastRun!.prompt).toContain('<xangi_reply_suggestions>');
+  });
+
+  it('does not request suggestions when Web reply suggestions are disabled', async () => {
+    await server.close();
+    server = await startTestServer({ replySuggestions: false, replySuggestionCount: 3 });
+
+    const res = await postJson(`${server.url}/api/terminal/inbox`, {
+      text: 'plain response',
+      source: 'even-g2',
+    });
+    expect(res.status).toBe(202);
+
+    await new Promise((r) => setTimeout(r, 50));
+    expect(server.lastRun).not.toBeNull();
+    expect(server.lastRun!.prompt).not.toContain('<xangi_reply_suggestions>');
   });
 
   it('returns 400 when text is missing or empty', async () => {

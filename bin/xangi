@@ -17,17 +17,53 @@ done
 SCRIPT_DIR="$(cd "$(dirname "$SOURCE")" && pwd)"
 ROOT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 
-if [ "${XANGI_USE_TSX:-}" = "true" ] && [ -f "$ROOT_DIR/src/cli/xangi.ts" ]; then
-  exec npx tsx "$ROOT_DIR/src/cli/xangi.ts" "$@"
+source_cli="$ROOT_DIR/src/cli/xangi.ts"
+local_tsx="$ROOT_DIR/node_modules/.bin/tsx"
+checkout_updater="$ROOT_DIR/packaging/update-checkout.sh"
+
+if { [ -d "$ROOT_DIR/.git" ] || [ -f "$ROOT_DIR/.git" ]; } && [ "${1:-}" = "update" ]; then
+  managed_update=false
+  for arg in "$@"; do
+    case "$arg" in
+      --managed|--manifest|--manifest=*|--public-key|--public-key=*|--allow-downgrade)
+        managed_update=true
+        ;;
+    esac
+  done
+  if [ "$managed_update" = false ]; then
+    if [ ! -x "$checkout_updater" ]; then
+      echo "Error: checkout updater not found: $checkout_updater" >&2
+      exit 1
+    fi
+    exec "$checkout_updater" "$ROOT_DIR" "${@:2}"
+  fi
+fi
+
+# A Git checkout may contain an ignored dist/ tree left over from before a pull.
+# Always execute the current source when local development dependencies exist.
+if { [ -d "$ROOT_DIR/.git" ] || [ -f "$ROOT_DIR/.git" ]; } && [ -f "$source_cli" ]; then
+  if [ ! -x "$local_tsx" ]; then
+    echo "Error: this xangi checkout needs local dependencies. Run npm ci first." >&2
+    exit 1
+  fi
+  exec "$local_tsx" "$source_cli" "$@"
+fi
+
+if [ "${XANGI_USE_TSX:-}" = "true" ] && [ -f "$source_cli" ]; then
+  if [ ! -x "$local_tsx" ]; then
+    echo "Error: XANGI_USE_TSX=true requires local tsx. Run npm ci first." >&2
+    exit 1
+  fi
+  exec "$local_tsx" "$source_cli" "$@"
 fi
 
 if [ -f "$ROOT_DIR/dist/cli/xangi.js" ]; then
   exec node "$ROOT_DIR/dist/cli/xangi.js" "$@"
 fi
 
-if [ -f "$ROOT_DIR/src/cli/xangi.ts" ]; then
-  exec npx tsx "$ROOT_DIR/src/cli/xangi.ts" "$@"
+if [ -f "$source_cli" ] && [ -x "$local_tsx" ]; then
+  exec "$local_tsx" "$source_cli" "$@"
 fi
 
-echo "Error: dist/cli/xangi.js not found. Run npm run build first." >&2
+echo "Error: xangi CLI not found. Run npm ci or npm run build first." >&2
 exit 1

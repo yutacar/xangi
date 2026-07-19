@@ -47,6 +47,10 @@ module.exports = {
       cwd: __dirname,
       interpreter: 'node',
       node_args: '--env-file=.env',
+      env: {
+        XANGI_SETUP_CONFIG_PATH: process.env.XANGI_SETUP_CONFIG_PATH,
+        XANGI_SETUP_STATE_DIR: process.env.XANGI_SETUP_STATE_DIR,
+      },
       instances: 1,
       exec_mode: 'fork',
     },
