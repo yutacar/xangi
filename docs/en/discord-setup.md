@@ -28,11 +28,11 @@ Log in with your Discord account.
 
 On the same Bot page, configure **Privileged Gateway Intents**:
 
-| Intent | Required | Description |
-|--------|----------|-------------|
-| Presence Intent | Optional | Retrieve user online status |
-| Server Members Intent | Optional | Retrieve server member info |
-| **Message Content Intent** | **Required** | Read message content |
+| Intent                     | Required     | Description                 |
+| -------------------------- | ------------ | --------------------------- |
+| Presence Intent            | Optional     | Retrieve user online status |
+| Server Members Intent      | Optional     | Retrieve server member info |
+| **Message Content Intent** | **Required** | Read message content        |
 
 **Warning: The bot cannot read messages unless Message Content Intent is turned ON!**
 
@@ -52,18 +52,17 @@ On the same Bot page, configure **Privileged Gateway Intents**:
 4. Copy the generated URL
 5. Open the URL in your browser and select the server to invite the bot to
 
-## 6. Set Environment Variables
+## 6. Set the token
 
 ```bash
-# Edit .env
-cp .env.example .env
-vim .env
+xangi settings
 ```
 
-```bash
-# Discord Bot Token
-DISCORD_TOKEN=YOUR_BOT_TOKEN_HERE
+Paste the Bot token into the Discord field on the local settings page and save it. You do not need to paste the token into an AI conversation or `.env`.
 
+In a source checkout, non-secret advanced settings such as allowed user IDs can still be placed in `.env`:
+
+```bash
 # Allowed user ID (single user only)
 DISCORD_ALLOWED_USER=YOUR_DISCORD_USER_ID
 ```
@@ -82,6 +81,7 @@ docker compose logs -f xangi
 ```
 
 Try `/new` or `/skills` in your Discord server, or mention the bot:
+
 ```
 @xangi Hello!
 ```
@@ -116,7 +116,7 @@ Try `/new` or `/skills` in your Discord server, or mention the bot:
 
 ### "Discord token not configured" Error
 
-The `DISCORD_TOKEN` in `.env` is empty. Set the token.
+Open `xangi settings` and confirm that Discord is marked as configured.
 
 ### The `Leave` button does not remove the user
 
@@ -124,6 +124,6 @@ Enable Manage Threads for the bot role or the target channel. Without it, the Di
 
 ## Security Notes
 
-- **Never commit tokens to Git** (`.env` is already in `.gitignore`)
+- **Never paste tokens into Git or an AI conversation**
 - **Never expose tokens publicly** (regenerate immediately if leaked)
 - `DISCORD_ALLOWED_USER` restricts usage to a single user (in compliance with Claude Code Terms of Service)

@@ -48,6 +48,10 @@ describe('buildXangiCommands trigger section', () => {
     expect(prompt).not.toContain('## セッション再開時の文脈把握（重要）');
     expect(prompt).not.toContain('<prefetched-history');
     expect(prompt).toContain('xangi-cmd discord_history --count <件数>');
+    expect(prompt).toContain(
+      'xangi-cmd discord_message --channel <チャンネルID> --message-id <メッセージID>'
+    );
+    expect(prompt).toContain('Discord APIを直接 `curl` せず');
   });
 
   it('slack には Discord 履歴取得コマンドを注入しない', () => {

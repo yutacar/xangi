@@ -128,6 +128,42 @@ describe('runWithBubbleEvents', () => {
     expect(seen.error).toBe(0);
   });
 
+  it('keeps reply suggestion markup out of shared events while preserving raw callbacks', async () => {
+    const { runWithBubbleEvents } = await import('../src/bubble-events-runner.js');
+    const rawTexts: string[] = [];
+    const fullResult =
+      '回答本文\n<xangi_reply_suggestions>["続けて","詳しく","別案"]</xangi_reply_suggestions>';
+    const runner = new FakeRunner(async (_p, cb) => {
+      cb.onText?.('回答本文\n<xangi_reply_suggestions>', '回答本文\n<xangi_reply_suggestions>');
+      cb.onText?.(
+        '["続けて","詳しく","別案"]</xangi_reply_suggestions>',
+        fullResult
+      );
+      const result = { result: fullResult, sessionId: 's' };
+      cb.onComplete?.(result);
+      return result;
+    });
+
+    const result = await runWithBubbleEvents(
+      runner,
+      'hi',
+      {
+        threadId: 'web:s1',
+        turnId: 'u-suggestions',
+        platform: 'web',
+        eventTextSanitizer: (text) => text.split('<xangi_reply')[0].trimEnd(),
+      },
+      { onText: (_chunk, fullText) => rawTexts.push(fullText) }
+    );
+
+    expect(result.result).toBe(fullResult);
+    expect(rawTexts.at(-1)).toBe(fullResult);
+    expect(collected.filter((event) => event.type === 'message.delta')).toEqual([
+      expect.objectContaining({ text: '回答本文', full_text: '回答本文' }),
+    ]);
+    expect(collected.find((event) => event.type === 'turn.complete')?.text).toBe('回答本文');
+  });
+
   it('updates current activity snapshots through the turn lifecycle', async () => {
     const { runWithBubbleEvents } = await import('../src/bubble-events-runner.js');
     const { getActivity, clearActivities } = await import('../src/activity-store.js');

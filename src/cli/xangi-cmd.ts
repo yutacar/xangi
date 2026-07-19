@@ -12,6 +12,7 @@
  *
  * 使い方:
  *   node xangi-cmd.js discord_history --channel <id> [--count <n>] [--offset <n>]
+ *   node xangi-cmd.js discord_message --channel <id> --message-id <id>
  *   node xangi-cmd.js discord_send --channel <id> --message <text>
  *   node xangi-cmd.js discord_channels --guild <id>
  *   node xangi-cmd.js discord_search --channel <id> --keyword <text>
@@ -142,6 +143,7 @@ async function main(): Promise<void> {
 
 Discord操作:
   discord_history   チャンネル履歴取得
+  discord_message   特定メッセージの全文取得
   discord_send      メッセージ送信
   discord_channels  チャンネル一覧
   discord_search    メッセージ検索

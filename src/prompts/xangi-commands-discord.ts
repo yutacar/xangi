@@ -33,6 +33,14 @@ xangi-cmd discord_history --channel <チャンネルID> --count <件数> --offse
 件数省略時はデフォルト10件、最大100件。offset で古いメッセージに遡れる。
 \`--channel\` を省略した場合、xangi上で実行中なら現在のチャンネルを使う。CLI単体実行では \`--channel\` が必要。
 
+履歴では各本文が200文字で省略される。特定メッセージの全文が必要な場合は、履歴に表示されたIDを使う：
+
+\`\`\`bash
+xangi-cmd discord_message --channel <チャンネルID> --message-id <メッセージID>
+\`\`\`
+
+Discord APIを直接呼ぶためのトークンはAIのシェルへ渡されない。全文取得でDiscord APIを直接 \`curl\` せず、\`discord_message\` を使う。
+
 ### 別チャンネルにメッセージ送信
 
 \`\`\`bash

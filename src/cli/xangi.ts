@@ -6,12 +6,29 @@
  * Keep it separate from xangi-cmd, which is an internal management/tool CLI.
  */
 import { existsSync, readFileSync } from 'fs';
-import { homedir } from 'os';
+import { arch, homedir, platform } from 'os';
 import { dirname, join } from 'path';
 import { fileURLToPath, pathToFileURL } from 'url';
 import readline from 'readline/promises';
 import { stdin as input, stdout as output } from 'process';
 import { serviceCmd } from './service-cmd.js';
+import { doctorCmd } from './doctor-cmd.js';
+import {
+  applyGuidedSetup,
+  completeGuidedSetup,
+  detectGuidedBackends,
+  guidedSetupCmd,
+  launcherCommand,
+  SetupPrerequisiteError,
+  writeOnboardingState,
+} from '../setup/guided-onboarding.js';
+import { installCmd } from './install-cmd.js';
+import { uninstallCmd } from './uninstall-cmd.js';
+import { updateCmd } from './update-cmd.js';
+import { notionSyncCmd } from './notion-sync-cmd.js';
+import { settingsCmd } from './settings-cmd.js';
+import { resolveAppLayout } from '../installer/layout.js';
+import { installConfiguredWorkspaceTemplate } from '../installer/workspace-template.js';
 
 type ProviderLabel = 'claude' | 'codex';
 
@@ -86,6 +103,15 @@ Usage:
   git diff | xangi send -
   xangi chat [--session ID]
   xangi status --session ID
+  xangi doctor [--dir XANGI_CHECKOUT] [--url WEB_CHAT_URL]
+  xangi setup
+  xangi setup --apply --backend BACKEND --workspace PATH --workspace-mode MODE
+  xangi setup --complete
+  xangi install [--manifest URL] [--public-key PATH]
+  xangi uninstall [--purge --yes]
+  xangi update [--managed] [--manifest URL] [--public-key PATH] [--allow-downgrade]
+  xangi notion-sync <status|enable|disable|run> [--sync-config PATH] [--once]
+  xangi settings
   xangi service <start|stop|restart|status|autostart> [--name NAME] [--dir DIR]
 
 Options:
@@ -98,6 +124,18 @@ Options:
   --json          Print raw JSON for sessions/status
   --name NAME     Service process name for xangi service
   --dir DIR       Target another xangi checkout for xangi service
+  --manifest URL  Signed release manifest URL
+  --public-key P  Ed25519 release public key path
+  --allow-downgrade  Explicitly permit installing an older release
+  --purge         Also remove settings, tokens, and state; never removes the workspace
+  --yes           Confirm the destructive data removal requested by --purge
+  --managed       From a source checkout, update the signed managed installation instead
+  --sync-config P Advanced compatibility mode: use a per-document Notion sync YAML
+  --once          Run one explicit Notion sync even when Notion sync is disabled
+  --apply         Persist choices made during AI-guided setup
+  --complete      Mark the minimum BOOTSTRAP onboarding complete
+  --workspace P   Absolute workspace path for setup --apply
+  --workspace-mode M  existing, template, or blank
 
 Config:
   ~/.config/xangi/config.json may contain url, token, provider, sessionId.
@@ -112,7 +150,18 @@ function parseArgs(argv: string[]): ParsedArgs {
   const command = argv[2] || 'help';
   const flags: Record<string, string | boolean> = {};
   const positionals: string[] = [];
-  const booleanFlags = new Set(['json', 'wait', 'detach']);
+  const booleanFlags = new Set([
+    'json',
+    'wait',
+    'detach',
+    'allow-downgrade',
+    'purge',
+    'yes',
+    'once',
+    'apply',
+    'complete',
+    'notion-sync',
+  ]);
 
   for (let i = 3; i < argv.length; i++) {
     const arg = argv[i];
@@ -381,6 +430,117 @@ export async function run(argv = process.argv): Promise<void> {
     return;
   }
 
+  if (parsed.command === 'doctor') {
+    const baseUrl = stringFlag(parsed.flags, 'url');
+    console.log(
+      await doctorCmd({
+        checkoutDir: stringFlag(parsed.flags, 'dir'),
+        ...(baseUrl
+          ? {
+              healthUrl: new URL('/health', `${baseUrl.replace(/\/+$/, '')}/`).href,
+              runtimeInfoUrl: new URL('/api/sessions', `${baseUrl.replace(/\/+$/, '')}/`).href,
+            }
+          : {}),
+      })
+    );
+    return;
+  }
+
+  if (parsed.command === 'setup') {
+    const currentPlatform = platform();
+    if (currentPlatform !== 'darwin' && currentPlatform !== 'linux') {
+      throw new Error(
+        `xangi setup previewはmacOSとLinux/WSL2に対応しています（検出: ${currentPlatform}）`
+      );
+    }
+    const layout = resolveAppLayout({
+      platform: currentPlatform,
+      arch: arch(),
+      homeDir: homedir(),
+      xdgDataHome: process.env.XDG_DATA_HOME,
+      xdgConfigHome: process.env.XDG_CONFIG_HOME,
+      xdgStateHome: process.env.XDG_STATE_HOME,
+    });
+    if (parsed.flags.apply) {
+      const backend = typeof parsed.flags.backend === 'string' ? parsed.flags.backend : '';
+      const workspacePath =
+        typeof parsed.flags.workspace === 'string' ? parsed.flags.workspace : '';
+      const workspaceMode =
+        typeof parsed.flags['workspace-mode'] === 'string' ? parsed.flags['workspace-mode'] : '';
+      console.log(
+        await applyGuidedSetup(
+          {
+            backend,
+            workspacePath,
+            workspaceMode,
+            notionSyncEnabled: parsed.flags['notion-sync'] === true,
+          },
+          {
+            layout,
+            initializeTemplate: installConfiguredWorkspaceTemplate,
+            backendAvailable: async (selected) =>
+              (await detectGuidedBackends()).some((candidate) => candidate.id === selected),
+          }
+        )
+      );
+      return;
+    }
+    if (parsed.flags.complete) {
+      console.log(await completeGuidedSetup(layout));
+      return;
+    }
+    const moduleDir = dirname(fileURLToPath(import.meta.url));
+    const managedLauncher = join(layout.appRoot, 'bin', 'xangi');
+    const checkoutLauncher = join(moduleDir, '..', '..', 'bin', 'xangi');
+    const managedInstallation = existsSync(managedLauncher);
+    const selectedLauncher = managedInstallation ? managedLauncher : checkoutLauncher;
+    const documentationRoot = managedInstallation
+      ? join(layout.appRoot, 'current')
+      : join(moduleDir, '..', '..');
+    console.log(
+      await guidedSetupCmd({
+        launcherCommand: launcherCommand(selectedLauncher),
+        documentationRoot,
+        installationKind: managedInstallation ? 'managed' : 'checkout',
+        managedActivationAfterSetup:
+          managedInstallation && process.env.XANGI_INSTALL_ACTIVATES_AFTER_SETUP === '1',
+        onSelected: (backend) =>
+          writeOnboardingState(layout, {
+            schemaVersion: 1,
+            phase: 'preflight',
+            backend: backend.id,
+            updatedAt: new Date().toISOString(),
+          }),
+      })
+    );
+    return;
+  }
+
+  if (parsed.command === 'install') {
+    console.log(await installCmd(parsed.flags));
+    return;
+  }
+
+  if (parsed.command === 'uninstall') {
+    console.log(await uninstallCmd(parsed.flags));
+    return;
+  }
+
+  if (parsed.command === 'update') {
+    console.log(await updateCmd(parsed.flags));
+    return;
+  }
+
+  if (parsed.command === 'notion-sync') {
+    console.log(await notionSyncCmd(parsed.positionals[0] || 'status', parsed.flags));
+    return;
+  }
+
+  if (parsed.command === 'settings') {
+    console.log(await settingsCmd());
+    return;
+  }
+
   const config = loadConfig(parsed.flags);
   switch (parsed.command) {
     case 'sessions':
@@ -403,6 +563,6 @@ export async function run(argv = process.argv): Promise<void> {
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
   run().catch((err) => {
     console.error(`Error: ${err instanceof Error ? err.message : String(err)}`);
-    process.exit(1);
+    process.exit(err instanceof SetupPrerequisiteError ? err.exitCode : 1);
   });
 }

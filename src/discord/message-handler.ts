@@ -85,6 +85,8 @@ export interface DiscordMessageTarget {
   conversationChannelId: string;
   settingsChannelId: string;
   createdThreadName: string | null;
+  threadName: string | null;
+  parentChannelName: string | null;
   isThread: boolean;
   outputChannel: {
     send: (options: unknown) => Promise<Message>;
@@ -144,11 +146,24 @@ async function resolveDiscordMessageTarget(
   const isThread =
     newThread !== null ||
     (typeof sourceChannel.isThread === 'function' && sourceChannel.isThread());
+  const sourceChannelDetails = message.channel as unknown as {
+    name?: string;
+    parent?: { name?: string } | null;
+  };
+  const sourceChannelName = sourceChannelDetails.name ?? null;
+  const threadName = isThread ? (newThread?.name ?? sourceChannelName) : null;
+  const parentChannelName = isThread
+    ? newThread
+      ? sourceChannelName
+      : (sourceChannelDetails.parent?.name ?? null)
+    : null;
 
   return {
     conversationChannelId,
     settingsChannelId,
     createdThreadName: newThread?.name ?? null,
+    threadName,
+    parentChannelName,
     isThread,
     outputChannel,
     sendInitial: (options: Parameters<Message['reply']>[0]) =>
@@ -269,7 +284,9 @@ export async function processPrompt(
     const channelContextLine = buildDiscordChannelContextLine({
       channelName,
       conversationChannelId,
-      createdThreadName: target.createdThreadName,
+      settingsChannelId,
+      threadName: target.threadName,
+      parentChannelName: target.parentChannelName,
     });
     if (channelContextLine) {
       prompt = `[プラットフォーム: Discord]\n${channelContextLine}\n${userInfo}\n${prompt}`;
@@ -645,12 +662,16 @@ export async function processReplySuggestion(
   const sourceChannel = channel as unknown as {
     isThread?: () => boolean;
     parentId?: string | null;
+    name?: string;
+    parent?: { name?: string } | null;
   };
   const isThread = typeof sourceChannel.isThread === 'function' && sourceChannel.isThread();
   const target: DiscordMessageTarget = {
     conversationChannelId: interaction.channelId,
     settingsChannelId: resolveDiscordSettingsChannelId(interaction.channelId, sourceChannel),
     createdThreadName: null,
+    threadName: isThread ? (sourceChannel.name ?? null) : null,
+    parentChannelName: isThread ? (sourceChannel.parent?.name ?? null) : null,
     isThread,
     outputChannel: channel as unknown as DiscordMessageTarget['outputChannel'],
     sendInitial: (options) => selectedMessage.reply(options),

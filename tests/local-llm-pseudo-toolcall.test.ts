@@ -275,9 +275,23 @@ describe('isSafeForRescue', () => {
     expect(isSafeForRescue('discord_history', { channel: '123', count: 10 }).safe).toBe(true);
   });
 
+  it('discord_message は safe (read-only tool list)', () => {
+    expect(
+      isSafeForRescue('discord_message', { channel: '123', 'message-id': '456' }).safe
+    ).toBe(true);
+  });
+
   it('exec で xangi-cmd discord_history は safe (allowlist)', () => {
     expect(
       isSafeForRescue('exec', { command: 'xangi-cmd discord_history --channel 123 --count 10' }).safe
+    ).toBe(true);
+  });
+
+  it('exec で xangi-cmd discord_message は safe (allowlist)', () => {
+    expect(
+      isSafeForRescue('exec', {
+        command: 'xangi-cmd discord_message --channel 123 --message-id 456',
+      }).safe
     ).toBe(true);
   });
 

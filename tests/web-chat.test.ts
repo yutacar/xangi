@@ -1,5 +1,13 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import { mkdtempSync, rmSync, existsSync, mkdirSync, writeFileSync, utimesSync } from 'fs';
+import {
+  appendFileSync,
+  mkdtempSync,
+  rmSync,
+  existsSync,
+  mkdirSync,
+  writeFileSync,
+  utimesSync,
+} from 'fs';
 import { tmpdir } from 'os';
 import { join } from 'path';
 import type { Server } from 'http';
@@ -26,6 +34,7 @@ class FakeRunner implements AgentRunner {
   callOrder: string[] = [];
   prompts: string[] = [];
   nextResult = 'ok';
+  persistResults = false;
 
   async run(): Promise<RunResult> {
     return { result: 'fake', sessionId: 'fake-sess' };
@@ -46,6 +55,18 @@ class FakeRunner implements AgentRunner {
           result: this.nextResult,
           sessionId: `provider-${channelId}`,
         };
+        if (this.persistResults && options?.appSessionId && process.env.WORKSPACE_PATH) {
+          const logsDir = join(process.env.WORKSPACE_PATH, 'logs', 'sessions');
+          mkdirSync(logsDir, { recursive: true });
+          const createdAt = new Date().toISOString();
+          appendFileSync(
+            join(logsDir, `${options.appSessionId}.jsonl`),
+            [
+              JSON.stringify({ role: 'user', content: prompt, createdAt }),
+              JSON.stringify({ role: 'assistant', content: result, createdAt }),
+            ].join('\n') + '\n'
+          );
+        }
         callbacks.onComplete?.(result);
         resolve(result);
       });
@@ -261,6 +282,46 @@ describe('web-chat HTTP API', () => {
     expect(textEvent?.data.fullText).toBe('回答本文');
     expect(done?.data.response).toBe('回答本文');
     expect(done?.data.replySuggestions).toEqual(['続けて', '詳しく', '別案']);
+  });
+
+  it('stores terminal inbox suggestions for the session detail API', async () => {
+    const id = (await (await fetch(`${baseUrl}/api/sessions`, { method: 'POST' })).json())
+      .sessionId as string;
+    runner.persistResults = true;
+    runner.nextResult =
+      '回答本文\n<xangi_reply_suggestions>["そのまま進めて","詳細を教えて","別案を見せて"]</xangi_reply_suggestions>';
+
+    const accepted = await fetch(`${baseUrl}/api/terminal/inbox`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ appSessionId: id, text: '次はどうする？', source: 'even-g2' }),
+    });
+    expect(accepted.status).toBe(202);
+
+    const ctx = `${WEB_CHAT_CONTEXT_PREFIX}${id}`;
+    for (let i = 0; i < 50 && !runner.pending.has(ctx); i++) {
+      await new Promise((r) => setTimeout(r, 20));
+    }
+    expect(runner.prompts.at(-1)).toContain('<xangi_reply_suggestions>');
+    expect(runner.release(ctx)).toBe(true);
+
+    let detail: {
+      messages: Array<{ role: string; content: string; replySuggestions: string[] }>;
+    } | null = null;
+    for (let i = 0; i < 50; i++) {
+      detail = await (await fetch(`${baseUrl}/api/sessions/${id}`)).json();
+      if (detail.messages.some((message) => message.role === 'assistant')) break;
+      await new Promise((r) => setTimeout(r, 20));
+    }
+    const assistant = detail?.messages.find((message) => message.role === 'assistant');
+    expect(assistant?.content).toBe('回答本文');
+    expect(assistant?.replySuggestions).toEqual([
+      'そのまま進めて',
+      '詳細を教えて',
+      '別案を見せて',
+    ]);
+    // inbox handler は 202 返却後に非同期実行されるため、finally まで完了させる。
+    await new Promise((r) => setTimeout(r, 20));
   });
 
   it('POST /api/chat allows two different sessions to stream concurrently', async () => {

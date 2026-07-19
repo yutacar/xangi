@@ -194,7 +194,7 @@ export function startWebChat(options: WebChatOptions): void {
     // 外部 device からのテキスト送信 (xangi-pet / Even G2 等の consumer 側 UI から POST される)
     if (isInboxPath(url)) {
       try {
-        const handled = await handlePetInboxRequest(req, res, agentRunner);
+        const handled = await handlePetInboxRequest(req, res, agentRunner, replySuggestions);
         if (handled) return;
       } catch (err) {
         if (!res.headersSent) {

@@ -36,7 +36,93 @@ flowchart LR
     class External ext;
 ```
 
-## Quick Start
+## ユーザー向け
+
+### 1. AIコーディングツールのセットアップ
+
+xangiのAIガイドには、Codex、Claude Code、Cursor Agent、Grok Build、Antigravityのいずれかを使います。専用スクリプトはxangiと独立しており、AIツールだけをセットアップしたい場合にも使えます。
+
+```bash
+bash <(curl -fsSL https://github.com/karaage0703/xangi/releases/latest/download/setup-ai-tools.sh) codex
+```
+
+最後の引数は`codex`、`claude-code`、`cursor`、`grok`、`antigravity`から選びます。インストール・認証状態だけを確認する場合は最後の引数を`check`にします。スクリプトは未導入の場合だけ各提供元の公式手順でインストールし、対話型の認証を開始します。Codexを選んだ場合はNode.jsとnpmが必要で、不足していれば導入先を表示して停止します。
+
+### 2. xangiのインストール
+
+macOS、Linux、WSL2のどれでも、同じコマンドをTerminalへ貼り付けます。
+
+```bash
+curl -fsSL https://github.com/karaage0703/xangi/releases/latest/download/install.sh | bash
+```
+
+OSとCPUを自動判定してxangiを配置し、そのままAIとのセットアップとサービス起動まで進みます。どのディレクトリで実行しても構いません。AIツールの導入や認証がまだの場合はxangi本体を保持したまま停止し、完了後に`xangi setup`から再開できます。
+
+### 最短の流れと、途中で止まった時のコマンド
+
+通常は、上のinstallerが`setup`とサービス起動まで自動で進めます。最後に`doctor`で確認すれば完了です。
+
+```text
+AIツールを準備 → xangiをインストール → setup → サービス起動 → doctor
+```
+
+途中で止まった場合は、次の順番で再開できます。
+
+1. `xangi setup`
+   - workspace、利用するAI、xangiの初期設定を対話形式で保存します。
+   - AIツールの導入・認証待ちや、質問の途中で止まった場合はここから再開します。
+2. `xangi install`
+   - managed版のOSサービスを登録・起動します。
+   - 通常はinstallerが自動実行するため、`setup`を手動で再開した場合だけ実行します。
+3. `xangi doctor`
+   - サービス、Web Chat、workspaceの設定と実際の動作をまとめて診断します。
+   - どこで止まったか分からない場合は、まずこれを実行してください。
+
+### 起動して使う
+
+セットアップ完了後はxangiが常駐しているため、追加の起動コマンドは不要です。
+
+- ブラウザ: `http://127.0.0.1:18888`を開く
+- Discordなど: セットアップしたbotへ話しかける
+- 状態確認: `xangi doctor`
+
+`xangi`にPATHが通っていない場合は、installerが最後に表示したLauncherの絶対pathを使ってください。
+
+### 1台に複数のxangiを入れる場合
+
+Gitを使わないmanaged版は、現在1つのOS userにつき1 instanceです。同じuserでもう一度install commandを実行すると、2個目を作らず既存のxangiを更新・再設定します。別のMac・PC、または同じPCの別OS userなら、それぞれのhome directoryへ完全に分かれるため、同じinstall commandを実行できます。
+
+同じOS userで複数instanceを動かすnamed instance機能は未対応です。現時点ではOS userを分けてください。後半にある複数clone / PM2 / Dockerの説明はsource checkout開発者向けで、Gitなしmanaged版の手順ではありません。
+
+### トークン設定
+
+セットアップ中にDiscord、Slack、LINE、Telegram、Notionのトークンが必要になったら、次の1コマンドでローカル設定画面を開きます。
+
+```bash
+xangi settings
+```
+
+値はAIとの会話やshell historyへ渡さず、OS別の専用secret領域へmode 0600で保存します。設定画面は`127.0.0.1`だけで一時的に開き、保存済みの値をブラウザへ返さず、保存後に終了します。
+
+### 設定と更新
+
+```bash
+xangi settings
+xangi setup
+xangi doctor
+xangi update
+xangi service restart
+xangi uninstall
+xangi notion-sync enable
+```
+
+Notion同期は`xangi settings`でtokenと同期先の親ページを保存してから有効にします。詳しい使い方、更新の仕組み、OS別の保存先は[使い方ガイド](docs/usage.md)を参照してください。
+
+managed版を削除する場合は`xangi uninstall`を実行します。常駐service、定期update、xangi本体だけを削除し、workspace、設定、token、履歴は残すため、同じinstall commandですぐ再インストールできます。設定や履歴も削除する完全resetは`xangi uninstall --purge --yes`です。どちらもworkspaceは削除しません。
+
+## 開発者・上級者向け
+
+ここから下は、Gitでcloneしてxangi自体を開発する人向けです。xangiのsource buildにはNode.js 22+とnpmが必要です。通常利用者は実行する必要がありません。
 
 ### 1. 環境変数設定
 
@@ -69,7 +155,7 @@ DISCORD_ALLOWED_USER=123456789012345678
 # Antigravity CLI: curl -fsSL https://antigravity.google/cli/install.sh | bash
 # Local LLM:   Ollama (https://ollama.com) をインストール
 
-npm install
+npm ci
 npm run build
 npm start
 
@@ -201,7 +287,10 @@ docker compose up xangi-gpu -d --build
 
 ## 関連プロジェクト
 
+### デバイス・ウェアラブル連携
+
 - [xangi-stackchan](https://github.com/karaage0703/xangi-stackchan) - xangi の応答をスタックチャン（M5Stack）に喋らせる・表情/首振り連動させる常駐ブリッジ。[外部イベントストリーム](docs/events.md)の SSE を購読して動作
+- [xangi-even-g2](https://github.com/karaage0703/xangi-even-g2) - Even Realities G2からxangiのセッションを操作し、音声入力・応答表示を行うEven Hubアプリ、bridge、ローカルWhisper STTサーバー
 
 ## 書籍
 

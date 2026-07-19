@@ -52,12 +52,16 @@ export function getDiscordChannelTopic(channel: {
 export function buildDiscordChannelContextLine(params: {
   channelName: string | null;
   conversationChannelId: string;
-  createdThreadName?: string | null;
+  settingsChannelId?: string;
+  threadName?: string | null;
+  parentChannelName?: string | null;
 }): string | null {
-  const { channelName, conversationChannelId, createdThreadName } = params;
-  if (!channelName) return null;
-  if (createdThreadName) {
-    return `[チャンネル: #${channelName} / thread: ${createdThreadName} (ID: ${conversationChannelId})]`;
+  const { channelName, conversationChannelId, settingsChannelId, threadName, parentChannelName } =
+    params;
+  if (threadName && settingsChannelId) {
+    const parentLabel = parentChannelName ? `#${parentChannelName} ` : '親チャンネル ';
+    return `[チャンネル: ${parentLabel}(ID: ${settingsChannelId}) / thread: ${threadName} (ID: ${conversationChannelId})]`;
   }
+  if (!channelName) return null;
   return `[チャンネル: #${channelName} (ID: ${conversationChannelId})]`;
 }
