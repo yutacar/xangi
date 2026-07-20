@@ -204,6 +204,16 @@ Schedule data is saved in `${DATA_DIR}/schedules.json`.
 - Default: `/workspace/.xangi/schedules.json`
 - Configurable via the `DATA_DIR` environment variable
 
+## First install without Git
+
+Use the same command on macOS, Linux, and WSL2:
+
+```bash
+curl -fsSL https://github.com/karaage0703/xangi/releases/latest/download/install.sh | bash
+```
+
+The common `install.sh` detects the operating system and CPU, then selects a target installer from the same GitHub Release. WSL2 follows the Linux path.
+
 ## Terminal CLI (xangi)
 
 `xangi` is a thin terminal client for humans to connect to xangi Web sessions. It consumes the existing Even Terminal compatible API (`/api/sessions`, `/api/prompt`, `/api/messages`, `/api/status`) and does not spawn Claude Code, Codex CLI, or other backends directly. The actual backend / model is resolved by the xangi server or the `XANGI_EVEN_TERMINAL_BACKEND` settings.
@@ -240,7 +250,62 @@ xangi send --detach "Queue this task for later"
 
 # Interactive REPL
 xangi chat --session <sessionId>
+
+# Initial macOS, Linux, or WSL2 setup
+xangi setup
+
+# Diagnose config and service health without printing secrets
+xangi doctor
+
+# Update from the signed release channel saved by the installer
+xangi update
+
+# Explicitly restart the service when you are ready to activate the update
+xangi service restart
+
+# Remove the managed app while retaining workspace, settings, tokens, and history
+xangi uninstall
+
+# Also remove settings, tokens, and history while retaining the workspace
+xangi uninstall --purge --yes
+
+# Notion sync defaults to off; inspect and explicitly change it
+xangi notion-sync status
+xangi notion-sync enable
+xangi notion-sync run
+xangi notion-sync disable
+
+# Run one sync while leaving the global switch off
+xangi notion-sync run --once
 ```
+
+`xangi setup` first detects Codex, Claude Code, Cursor Agent, Grok CLI, and Antigravity on `PATH` using deterministic executable and `--version` checks. It asks which detected agent to use, or points to the independent AI tool setup and exits when none are available. Local LLM remains available for normal xangi use, but is not selected to perform the file-editing first-run onboarding.
+
+To set up only an AI coding tool without installing xangi, run this one-liner:
+
+```bash
+bash <(curl -fsSL https://github.com/karaage0703/xangi/releases/latest/download/setup-ai-tools.sh) codex
+```
+
+Replace the last argument with `codex`, `claude-code`, `cursor`, `grok`, or `antigravity`. Use `check` for a read-only status check.
+
+The selected agent starts interactively in Japanese and asks one question at a time. Only a short start message appears in the agent UI; the agent reads detailed instructions from a temporary mode-0600 file that is removed when it exits. When no known workspace exists, xangi recommends `ai-assistant-workspace` first. If selected, xangi resolves the GitHub repository's latest `main` commit and downloads that commit's archive without Git. Other blank workspaces and existing workspaces at absolute paths remain available. The agent invokes `xangi setup --apply` after the user decides, but xangi itself validates the absolute path, backend, and workspace mode; atomically writes the mode-0600 configuration; applies the repository template; and creates a starter BOOTSTRAP.md for a blank workspace. `xangi setup --complete` refuses completion while BOOTSTRAP.md remains. After the minimum setup, the agent asks whether to start using xangi or continue with Discord, Notion, other platforms, schedules, and skills. For these xangi settings it does not search the workspace; it uses xangi's bundled README, `docs/usage.md`, and platform documentation as the source of truth. Before exiting, a checkout runs `service start` and then `doctor`, and reports completion only after service, health, and runtime-workspace pass. A managed distribution relies on the installer to activate the OS service and uses `doctor` for verification. Notion sync stays off until explicitly enabled. Template state records repository, commit SHA, archive SHA-256, and application time; later updates never overwrite the workspace.
+
+There is no browser UI that replaces AI onboarding. Token entry alone uses the local `xangi settings` GUI. When no supported agent is available setup prints the standalone setup command and exits, so rerun `xangi setup` after installing an agent. Linux follows the XDG Base Directory layout and uses a `systemd --user` service. WSL2 requires systemd.
+
+`setup`, `update`, and `doctor` work in both managed distributions and Git checkouts. The common configuration saved by checkout `setup` is loaded by the PM2 service, so `WORKSPACE_PATH` does not need to be duplicated in `.env`. `doctor` checks PM2, Web Chat health, and the actual workspace reported by `/api/sessions`; it exits with an error when that workspace differs from the saved setup.
+
+In a checkout, `./bin/xangi update` first refuses uncommitted changes, detached HEAD, and a branch without an upstream, then runs `git pull --ff-only`, `npm ci`, and `npm run build`. Use `./bin/xangi update --managed` to explicitly invoke the signed managed updater from a checkout.
+
+For a managed installation, `xangi uninstall` removes scheduled updates, the OS service, and the xangi application in that order. It retains the workspace, settings, tokens, and history, so rerunning the printed install command restores the application with the previous configuration. Use `xangi uninstall --purge --yes` only when settings, tokens, and history should also be removed. Without `--yes`, `--purge` exits before deleting anything. Neither mode removes the workspace.
+
+In a development checkout, `./bin/xangi` starts current source through the local `tsx` installed by `npm ci`, preventing an ignored, stale `dist/` tree from surviving a `git pull`. A distribution contains no source tree and uses its bundled `dist` and Node.js runtime; it also bundles the README and user-facing documentation consumed during onboarding.
+
+Enter Discord, Slack, LINE, Telegram, and Notion tokens, plus the Notion destination parent page ID or URL, through `xangi settings`. The temporary GUI binds only to `127.0.0.1`, uses a one-time URL plus Host validation, never returns stored values to the browser, and closes after saving. xangi atomically stores values with mode 0600 in the OS-specific config directory's `secrets.json`. Users do not need to assemble `read` or `printf` commands or paste tokens into an AI conversation. Explicit environment variables remain supported and take precedence.
+
+Notion sync defaults to off. Save its token and destination parent page with `xangi settings`, then run `xangi notion-sync enable`. `xangi notion-sync run` discovers workspace Markdown automatically and mirrors the folder hierarchy to Notion, with the workspace as the source of truth. Git metadata, xangi state, dependencies, build output, logs, and hidden paths are excluded. Individual paths, direction choices, and `notion-sync.yaml` are not required for standard use. While disabled, `status` and `disable` do not contact Notion, and a normal `run` stops before network access. Only `run --once` performs one explicit sync without changing the switch.
+
+GitHub Releases publish the common entry point as `install.sh`. `packaging/bootstrap.sh` detects the operating system and CPU, then selects `xangi-installer-<darwin|linux>-<arm64|x64>.sh` from the same release. Each target installer is generated by `packaging/build-installer.mjs` and verifies xangi's Ed25519-signed manifest and artifact. It never extracts an archive before verification, stores the public key and `releases/latest` update-manifest URL outside versioned application files, and starts `xangi setup` through the bundled Node.js runtime. Artifact URLs stay pinned to a release version; updates verify the latest manifest signature before downloading a newer artifact. The `setup-ai-tools.sh` release asset installs and authenticates an AI coding tool independently of xangi. If initial installation finds no installed and authenticated AI CLI, it keeps xangi installed, skips service activation, and exits with status 3; run `xangi setup` after preparing the AI tool. LaunchAgent or a systemd user timer runs `xangi update` every six hours. The workspace template resolves the repository's latest commit when selected, is applied only to an empty workspace once, and is never updated, merged, or overwritten afterward.
 
 Main options:
 
@@ -276,6 +341,7 @@ The AI performs Discord / Slack operations via the `xangi-cmd` CLI tool. Because
 | Command                                                                         | Description                                                                                                                 |
 | ------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------- |
 | `xangi-cmd discord_history --channel <ID> [--count N] [--offset M]`             | Get channel history                                                                                                         |
+| `xangi-cmd discord_message --channel <ID> --message-id <ID>`                    | Get one message without truncating its content                                                                              |
 | `xangi-cmd web_history [--session <id>] [--count N]`                            | Web Chat current pane history (auto-resolves from `XANGI_CHANNEL_ID=web-chat:<id>`)                                         |
 | `xangi-cmd slack_history [--channel <id>] [--count N]`                          | Slack current channel history (auto-resolves from `XANGI_CHANNEL_ID=<channel>`)                                             |
 | `xangi-cmd discord_send --channel <ID> --message "text"`                        | Send a message                                                                                                              |
@@ -300,6 +366,7 @@ On Slack, when `SLACK_REACTION_DELETE_ENABLED=true` (default) and the Slack App 
 xangi-cmd discord_history --count 10
 xangi-cmd discord_history --channel 1234567890 --count 10
 xangi-cmd discord_history --channel 1234567890 --count 30 --offset 30  # scroll back
+xangi-cmd discord_message --channel 1234567890 --message-id 111222333  # get the full message selected from history
 
 # Send a message to another channel
 xangi-cmd discord_send --channel 1234567890 --message "Work completed!"
@@ -484,6 +551,7 @@ To disable this command, set `ALLOW_AUTOREPLY_COMMAND=false` in `.env` (default:
 
 Use `/threadmode mode:on|off|default|show` to inspect or toggle this channel's Discord per-message thread reply mode while the bot is running (no restart needed, persisted to `settings.json`). `default` removes the channel override and falls back to the global `DISCORD_REPLY_IN_THREAD` default.
 For messages received inside an existing Discord thread, xangi automatically injects the thread starter message as `🧵 スレッド元`. This keeps the original parent-channel starter message available even when thread-local history does not include it.
+Thread prompts always include both the parent channel name/ID and thread name/ID, allowing the agent to distinguish and target either destination without another lookup.
 Inside Discord threads, `/autoreply`, `/notify`, `/threadmode`, and channel topic injection inherit the parent channel settings.
 To disable this command, set `ALLOW_THREAD_MODE_COMMAND=false` in `.env` (default: enabled).
 
@@ -537,7 +605,7 @@ The above response is sent as two separate messages to Discord.
 
 ### Restart Mechanism
 
-`./bin/xangi service start|stop|restart|status` is the high-level command that controls the supervisor outside xangi. In PM2 deployments, it targets the process named by `XANGI_PROCESS_NAME` in that clone's `.env`.
+`xangi service restart|status` controls the managed installation's OS service. In a checkout, `./bin/xangi service start|stop|restart|status` controls PM2 and targets the process named by `XANGI_PROCESS_NAME` in that clone's `.env`.
 
 `/restart` and `xangi-cmd system_restart` are low-level operations that ask the running xangi process to gracefully shut down. The external supervisor, such as Docker, pm2, or systemd, is responsible for starting xangi again.
 
@@ -1194,7 +1262,7 @@ When Web Chat is enabled, the same server also exposes `http://localhost:<WEB_CH
 
 ### External Event Stream and Device Input
 
-xangi exposes response lifecycle events through pull SSE (`GET /api/events/stream`) and small write endpoints for external UI clients (`POST /api/pet/inbox`, `/api/device/inbox`, `/api/terminal/inbox`). See [External Event Stream](events.md) for schemas and examples.
+xangi exposes response lifecycle events through pull SSE (`GET /api/events/stream`) and small write endpoints for external UI clients (`POST /api/pet/inbox`, `/api/device/inbox`, `/api/terminal/inbox`). When Web reply suggestions are enabled, inbox responses expose generated suggestions through `GET /api/sessions/:id`. See [External Event Stream](events.md) for schemas and examples.
 
 | Variable                     | Description                                                                         | Default |
 | ---------------------------- | ----------------------------------------------------------------------------------- | ------- |
@@ -1338,6 +1406,10 @@ When `SKIP_PERMISSIONS=true` (the default), xangi passes `--dangerously-skip-per
 | `SLACK_REPLY_SUGGESTIONS_COUNT`    | Number of reply suggestions (1-5)                                                                          | `3`     |
 
 ## Running Multiple Instances
+
+The Gitless managed distribution currently supports one instance per OS user. Re-running the installer as the same user updates and reconfigures the existing instance instead of creating a second one. Separate computers or separate OS users have independent home, configuration, state, workspace, and service locations and can each run the normal install command. Named managed instances within one OS user are not supported yet.
+
+The guidance below is for developers running multiple Git source checkouts, PM2 processes, or Docker containers. Do not apply it directly to the Gitless managed distribution.
 
 If you run multiple xangi instances on the same machine (e.g. one for production and one for development), **always give each instance its own `DATA_DIR`**. The default is `${WORKSPACE_PATH}/.xangi/`; sharing this between instances causes `sessions.json` to be overwritten back and forth, which can silently wipe out newly created sessions (because a long-running process keeps the stale in-memory list and writes it back).
 

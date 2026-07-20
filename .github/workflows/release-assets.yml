@@ -1,0 +1,161 @@
+name: Release assets
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Existing public release tag (vX.Y.Z)
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-assets-${{ github.event.release.tag_name || inputs.tag }}
+  cancel-in-progress: false
+
+env:
+  RELEASE_TAG: ${{ github.event.release.tag_name || inputs.tag }}
+
+jobs:
+  build-bundles:
+    if: github.repository == 'karaage0703/xangi'
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: ubuntu-24.04
+            platform: linux
+            arch: x64
+          - runner: ubuntu-24.04-arm
+            platform: linux
+            arch: arm64
+          - runner: macos-15-intel
+            platform: darwin
+            arch: x64
+          - runner: macos-15
+            platform: darwin
+            arch: arm64
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ env.RELEASE_TAG }}
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: npm
+      - name: Validate release identity
+        shell: bash
+        run: |
+          set -euo pipefail
+          [[ "$RELEASE_TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+([+-][0-9A-Za-z.-]+)?$ ]]
+          test "$(node -p 'process.platform')" = "${{ matrix.platform }}"
+          test "$(node -p 'process.arch')" = "${{ matrix.arch }}"
+      - run: npm ci
+      - run: npm run build
+      - name: Build native bundle
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p release-inputs
+          packaging/build-bundle.sh \
+            --version "${RELEASE_TAG#v}" \
+            --platform "${{ matrix.platform }}" \
+            --arch "${{ matrix.arch }}" \
+            --node-binary "$(command -v node)" \
+            --output-dir release-inputs
+      - uses: actions/upload-artifact@v7
+        with:
+          name: bundle-${{ matrix.platform }}-${{ matrix.arch }}
+          path: release-inputs/*.tar.gz
+          if-no-files-found: error
+          retention-days: 7
+
+  publish-assets:
+    if: github.repository == 'karaage0703/xangi'
+    needs: build-bundles
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ env.RELEASE_TAG }}
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+      - uses: actions/download-artifact@v8
+        with:
+          pattern: bundle-*
+          path: release-inputs
+          merge-multiple: true
+      - name: Build signed manifests and installers
+        shell: bash
+        env:
+          SIGNING_KEY_BASE64: ${{ secrets.XANGI_RELEASE_SIGNING_KEY_BASE64 }}
+        run: |
+          set -euo pipefail
+          [[ "$RELEASE_TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+([+-][0-9A-Za-z.-]+)?$ ]]
+          test -n "$SIGNING_KEY_BASE64"
+          version="${RELEASE_TAG#v}"
+          release_base="https://github.com/${GITHUB_REPOSITORY}/releases/download/${RELEASE_TAG}"
+          latest_base="https://github.com/${GITHUB_REPOSITORY}/releases/latest/download"
+          key_file="$RUNNER_TEMP/xangi-release-signing-key.pem"
+          public_key="$RUNNER_TEMP/xangi-release-public-key.pem"
+          cleanup() {
+            rm -f "$key_file" "$public_key"
+          }
+          trap cleanup EXIT INT TERM
+          printf '%s' "$SIGNING_KEY_BASE64" | base64 --decode > "$key_file"
+          chmod 0600 "$key_file"
+          mkdir -p release-assets
+
+          for target in linux-x64 linux-arm64 darwin-x64 darwin-arm64; do
+            platform="${target%-*}"
+            arch="${target#*-}"
+            bundle="release-inputs/xangi-${version}-${platform}-${arch}.tar.gz"
+            manifest="release-assets/xangi-manifest-${platform}-${arch}.json"
+            installer="release-assets/xangi-installer-${platform}-${arch}.sh"
+            test -f "$bundle"
+            node packaging/sign-release-manifest.mjs \
+              --version "$version" \
+              --platform "$platform" \
+              --arch "$arch" \
+              --artifact "$bundle" \
+              --asset-url "$release_base/$(basename "$bundle")" \
+              --private-key "$key_file" \
+              --manifest-output "$manifest" \
+              --public-key-output "$public_key"
+            node packaging/build-installer.mjs \
+              --manifest "$manifest" \
+              --artifact "$bundle" \
+              --public-key "$public_key" \
+              --manifest-url "$latest_base/$(basename "$manifest")" \
+              --installer-url "$release_base/$(basename "$installer")" \
+              --output "$installer"
+            cp "$bundle" release-assets/
+          done
+
+          cp packaging/bootstrap.sh release-assets/install.sh
+          cp packaging/setup-ai-tools.sh release-assets/setup-ai-tools.sh
+          chmod 0755 release-assets/install.sh release-assets/setup-ai-tools.sh release-assets/xangi-installer-*.sh
+          bash -n release-assets/install.sh release-assets/setup-ai-tools.sh release-assets/xangi-installer-*.sh
+          if grep -R -nE '@[A-Z_]+@' release-assets; then
+            echo 'Unresolved installer template token' >&2
+            exit 1
+          fi
+          (cd release-assets && sha256sum * > SHA256SUMS)
+      - uses: actions/upload-artifact@v7
+        with:
+          name: release-assets-${{ env.RELEASE_TAG }}
+          path: release-assets/
+          if-no-files-found: error
+          retention-days: 30
+      - name: Attach assets to the public release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release upload "$RELEASE_TAG" release-assets/* --clobber --repo "$GITHUB_REPOSITORY"

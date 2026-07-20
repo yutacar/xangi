@@ -32,7 +32,11 @@ import { finalizeActiveStreams } from './stream-finalizer.js';
 import { registerDiscordSchedulerBridge } from './discord/scheduler-bridge.js';
 import { runShutdownCleanup } from './shutdown.js';
 import { getSelfLifecyclePermission } from './self-lifecycle.js';
+import { loadStoredSecrets } from './setup/runtime-secrets.js';
+import { applySetupRuntimeEnvFromProcess } from './installer/runtime-config.js';
 dotenvConfig({ override: true });
+await applySetupRuntimeEnvFromProcess();
+await loadStoredSecrets();
 
 /**
  * dataDir を flock 風に排他ロックする。

@@ -28,11 +28,17 @@ In the **Messaging API** tab (lower section):
 - **Auto-reply messages**: disable in **LINE Official Account Manager** (so xangi handles replies).
 - **Greeting messages**: optional.
 
-## 4. Configure `.env`
+## 4. Set the tokens
 
 ```bash
-LINE_CHANNEL_ACCESS_TOKEN=<token from step 2>
-LINE_CHANNEL_SECRET=<secret from step 2>
+xangi settings
+```
+
+Paste the Channel access token and Channel secret into the LINE fields on the local settings page and save them.
+
+In a source checkout, non-secret advanced settings such as allowed user IDs can still be placed in `.env`:
+
+```bash
 LINE_ALLOWED_USER=<LINE userId(s), comma-separated, or "*" for all>
 # Optional: webhook
 LINE_WEBHOOK_PORT=8765
@@ -77,7 +83,7 @@ Add the LINE official account as a friend via the QR code (under **Messaging API
 
 - LINE webhooks are signed with HMAC-SHA256 in the `X-Line-Signature` header; `@line/bot-sdk`'s `validateSignature` verifies it automatically — without the Channel secret, no valid signature can be forged.
 - Avoid `*` in `LINE_ALLOWED_USER` for 1:1 use cases; restrict to specific userIds.
-- Keep the channel access token and secret out of git (`.env` is gitignored).
+- Store the channel access token and secret through `xangi settings`; never paste them into Git or an AI conversation.
 
 ## Responsiveness & context UX
 
