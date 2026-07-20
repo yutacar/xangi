@@ -230,6 +230,8 @@ events SSE は「受信専用 broadcast」が設計の核だが、consumer 側 U
 
 応答は同期で返らない。受理されたら 202 が即返り、agent の応答は既存の `/api/events/stream` 経由で全 consumer に broadcast される。「pet が話しかけて、その応答を全 pet で見る」が成立する。
 
+3種類の inbox は Web Chat と同じ回答候補設定 (`WEB_REPLY_SUGGESTIONS` / `WEB_REPLY_SUGGESTIONS_COUNT` と全体設定の override) を使う。有効時は AI が生成した候補を `GET /api/sessions/:id` の最新 assistant message にある `replySuggestions` から取得できる。内部用の候補マークアップは events SSE には配信されない。
+
 ### エンドポイント
 
 ```

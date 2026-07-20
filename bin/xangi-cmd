@@ -3,6 +3,7 @@
 #
 # 使い方:
 #   xangi-cmd discord_history --channel 123456 --count 10
+#   xangi-cmd discord_message --channel 123456 --message-id 789012
 #   xangi-cmd discord_send --channel 123456 --message "hello"
 #   xangi-cmd schedule_list
 #
@@ -32,6 +33,7 @@ if [ -z "$COMMAND" ] || [ "$COMMAND" = "help" ]; then
 
 Discord操作:
   discord_history   チャンネル履歴取得
+  discord_message   特定メッセージの全文取得
   discord_send      メッセージ送信
   discord_channels  チャンネル一覧
   discord_search    メッセージ検索

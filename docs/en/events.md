@@ -86,6 +86,8 @@ Authorization: Bearer <TOKEN>   # required only when a token is configured
 
 Success returns 202 immediately. The agent response is broadcast through `/api/events/stream`.
 
+All three inbox routes use the Web Chat reply suggestion settings (`WEB_REPLY_SUGGESTIONS` / `WEB_REPLY_SUGGESTIONS_COUNT`, including the global settings override). When enabled, AI-generated suggestions are available in the latest assistant message's `replySuggestions` field from `GET /api/sessions/:id`. Internal suggestion markup is not emitted through the events SSE stream.
+
 ```jsonc
 {
   "accepted": true,

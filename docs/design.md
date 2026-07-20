@@ -66,7 +66,7 @@ flowchart LR
 挙動:
 
 - per-channel / per-thread セッション分離（`contextKey = discord:<channelId>`。スレッド返信モードで新規スレッドを作成できた場合は `discord:<threadId>`）
-- Discord API 投稿先は親チャンネルまたは作成済みスレッド、runner / timeout / Stop / processing 管理は確定済みの `runKey = contextKey` で分離し、同じDiscordチャンネル内の別スレッドを別実行単位として扱う
+- Discord API 投稿先は親チャンネルまたは作成済みスレッド、runner / timeout / Stop / processing 管理は確定済みの `runKey = contextKey` で分離し、同じDiscordチャンネル内の別スレッドを別実行単位として扱う。スレッドのpromptには親チャンネル名/IDとスレッド名/IDを併記し、追加検索なしでどちらも送信先に選べるようにする
 - Discord スレッド内の per-channel 設定解決は親チャンネルIDを使う。`CHANNEL_OVERRIDES`（`/backend` / `/llmmode`）、`settings.json`（`/autoreply` / `/notify` / `/threadmode`）、チャンネル topic 注入は親チャンネル設定を継承する
 - 既存スレッド内の発言では、Discord の starter message（親チャンネル側の元メッセージ）を `🧵 スレッド元` としてプロンプトに注入し、スレッド履歴だけでは見えない最初の話題にフォーカスする
 - スレッド・添付ファイル・リアクション対応
@@ -97,6 +97,28 @@ flowchart LR
 - ファイル添付・ダウンロードは `WEB_CHAT_UPLOAD_ACCEPT` / `WEB_CHAT_DOWNLOAD_ACCEPT` で許可拡張子を制御
 - `GET /api/sessions` はセッション一覧に `activity` を含める。`activity-store.ts` が現在ターンの状態、要約、直近ツール行、経過秒をプロセスメモリで保持する
 - `/monitor` は読み取り専用のセッション監視ページ。Web Chat と同じ `/api/sessions` を 2 秒ポーリングし、実行中セッションを上に並べる。スマホ・Even G2 からの閲覧を想定して行高と文字サイズを大きめにしている
+
+### macOS・Linux・WSL2セットアップ・更新コア
+
+- `installer/layout.ts` はapp versionsとworkspace/state/configを分離する。将来のWindows adapterも同じlogical layoutを使う
+- `installer/manifest.ts` と `updater.ts` はEd25519、SHA-256、update lock、staging、atomic current切替を担当する。初回installのservice起動時はhealth確認と失敗時rollbackを行う
+- `installer/platform/darwin.ts` はLaunchAgentだけを担当し、OS固有処理を共通updaterから分離する
+- `installer/platform/linux.ts` はXDG配置と`systemd --user` lifecycleを担当する。WSL2はsystemd有効環境に限定し、設定URLは`wslview`、なければ`cmd.exe`でWindows側ブラウザへ渡す
+- `setup/guided-onboarding.ts` は対応agent CLIをPATHと`--version`で決定論的に検出する。agent UIへは短い開始promptだけを渡し、詳細手順はmode 0600の一時ファイルに分離して終了時に削除する。agentは意思決定を支援するが、config保存・workspace mode検証・repository template適用・BOOTSTRAP完了判定はxangiの`setup --apply` / `setup --complete`が担当する。xangi自体の追加設定はworkspaceではなく配布物内の公式docsを参照し、checkoutとmanaged distributionで異なる起動方法を案内する
+- `onboarding.json` は`preflight` / `bootstrap_in_progress` / `minimum_ready`をconfig領域へatomic保存し、中断後の再開と診断の正本になる。AIオンボーディングを置き換えるsetup用browser UIは持たず、対応agentが無い場合はinstall手順を表示して終了する
+- `secrets.json` はOS別config領域へmode 0600でatomic保存する。`xangi settings`はtoken専用の一時GUIをloopbackだけに開き、one-time URL、Host検証、no-store/CSPを適用する。保存済み値はbrowserへ返さず、保存後にserverを閉じ、AI・workspace・setup JSON・shell historyからsecretを分離する
+- `packaging/bootstrap.sh` は全対応OS共通の`install.sh`としてGitHub Releaseへ配置する。Darwin / Linuxとarm64 / x64を自動判定し、同じReleaseのtarget installerへ振り分ける。WSL2はLinuxとして扱う
+- `packaging/build-installer.mjs` はrelease build時に署名済みmanifestとbundleを照合し、manifest・artifactのSHA-256とEd25519公開鍵をtarget installerへ埋め込む。初回install後の更新は保存済み公開鍵を使う
+- `.github/workflows/release-assets.yml` はDarwin / Linux × arm64 / x64をnative runnerでbuildし、最終jobだけがEd25519秘密鍵を使ってmanifestへ署名する。version固定artifact URLと`releases/latest`の更新確認用manifest URLをinstallerへ埋め込み、bundle・manifest・installer・checksumを同じGitHub Releaseへ添付する
+- `workspace-template.ts` は利用者が選択した時点で指定GitHub repositoryのbranch最新commitを解決し、commit固定archiveをGitなしで取得する。repository・commit SHA・archive SHA-256をstateへ記録し、空workspaceへ初回だけatomic展開する。適用後のworkspaceは利用者所有で、app updateでは変更しない
+- `platform/*-update.ts` は6時間ごとに署名済みchannelを確認するLaunchAgent / systemd user timerを管理する
+- `xangi uninstall`はupdate schedulerとserviceの既存adapterを使って停止・登録解除した後、app rootだけを削除する。config/state/workspaceはappと分離されているため既定では保持し、`--purge --yes`の明示時だけconfig/stateを追加削除する。workspaceは常に対象外とする
+- `setup`の共通configはmanaged serviceとcheckout PM2の両方が読む。checkout PM2へは秘密値を含まないconfig pathとstate pathだけをecosystem経由で渡す
+- checkoutの`update`はclean worktree、branch、upstreamを検証して`git pull --ff-only`、依存更新、buildを行う。`--managed`指定時は署名済みmanaged updaterを使う
+- `doctor`はcheckoutではPM2を検出し、Web Chatの`/api/sessions`が返すworkdirをsetup configとrealpath比較する
+- checkoutの`bin/xangi`はlocal `tsx`で現在のsourceを実行し、Git管理外の古い`dist/`を使用しない。sourceを含まない配布bundleでは同梱`dist/`を実行し、オンボーディングの正本になるREADMEと利用者向けdocsもallowlistで同梱する
+- `notion-sync/` の標準経路はworkspaceを正本とする一方向ミラー。安全なMarkdownを自動検出し、state領域のpath-to-page対応表を使ってNotionの子ページ階層を作成・更新する。従来の文書単位manifest engineは互換用の明示指定時だけ利用する。実Notion接続はadapter境界に隔離する
+- `notionSyncEnabled` はデフォルトOFFのglobal gate。OFF中のstatus/disableはNotion APIへ接続せず、通常runもadapter生成前に拒否する。`run --once`だけが明示的な一回実行としてgateを越え、同期stateとbackupはdisable後も保持する
 
 ### LINE Bot 統合（line.ts）
 
@@ -179,6 +201,7 @@ interface AgentRunner {
 - `onText` で `streaming`
 - `onToolUse` で `tool` と直近ツール行
 - `onComplete` / cancel / error で `complete` / `aborted` / `error`
+- 呼び出し元が `eventTextSanitizer` を指定した場合、activity と共通 events には整形後の本文を流し、Runner の生応答は transcript 用に保持する
 - スナップショットはプロセスメモリのみ。再起動後は復元せず、`sessions.json` と transcript を汚さない
 - `GET /api/sessions` と Even Terminal 互換 `GET /api/sessions?provider=...` が同じ activity を参照する
 
@@ -523,8 +546,8 @@ API: `recordToolCallAndDetectLoop(session, sig)` が `{ kind: 'none' \| 'exact' 
 
 | カテゴリ                       | 対象                                                                                                                                                                                         |
 | ------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| read-only tool 直接            | `read` / `glob` / `grep` / `tool_search` / `discord_history` / `web_history` / `slack_history` / `discord_channels` / `discord_search` / `slack_channels` / `slack_search` / `schedule_list` |
-| `exec` / `bash` のサブコマンド | `xangi-cmd {discord_history,web_history,slack_history,discord_channels,discord_search,slack_channels,slack_search,schedule_list,system_settings}` のいずれかで始まる場合のみ                 |
+| read-only tool 直接            | `read` / `glob` / `grep` / `tool_search` / `discord_history` / `discord_message` / `web_history` / `slack_history` / `discord_channels` / `discord_search` / `slack_channels` / `slack_search` / `schedule_list` |
+| `exec` / `bash` のサブコマンド | `xangi-cmd {discord_history,discord_message,web_history,slack_history,discord_channels,discord_search,slack_channels,slack_search,schedule_list,system_settings}` のいずれかで始まる場合のみ                 |
 | shell metacharacter            | `\|` / `&` / `;` / `` ` `` / `$` / `<` / `>` / `$(...)` / `&&` / `\|\|` / `>` リダイレクトが含まれていたら即 reject                                                                          |
 
 それ以外は `{safe: false, reason}` を返し、`unsafe_tool_in_pseudo_format` 構造化エラーで LLM に proper function_calling 構造への切替を促す。

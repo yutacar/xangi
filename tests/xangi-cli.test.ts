@@ -1,7 +1,7 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'http';
 import { spawn } from 'child_process';
-import { chmodSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'fs';
+import { chmodSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'fs';
 import { tmpdir } from 'os';
 import { dirname, join } from 'path';
 import { fileURLToPath } from 'url';
@@ -156,6 +156,7 @@ describe('xangi user-facing CLI', () => {
       pm2Path,
       `#!/bin/sh
 echo "$@" >> "$PM2_LOG"
+echo "runtime=$XANGI_SETUP_CONFIG_PATH|$XANGI_SETUP_STATE_DIR" >> "$PM2_LOG"
 if [ "$1" = "--version" ]; then
   echo "5.0.0"
   exit 0
@@ -175,6 +176,68 @@ exit 0
     chmodSync(pm2Path, 0o755);
     return { dir, logFile };
   }
+
+  it('documents managed install and update commands in help', async () => {
+    const result = await runCli(['help']);
+
+    expect(result.code).toBe(0);
+    expect(result.stdout).toContain('xangi install');
+    expect(result.stdout).toContain('xangi uninstall');
+    expect(result.stdout).toContain('xangi update');
+    expect(result.stdout).toContain('xangi notion-sync');
+    expect(result.stdout).toContain('status|enable|disable|run');
+    expect(result.stdout).toContain('--once');
+    expect(result.stdout).toContain('--allow-downgrade');
+    expect(result.stdout).toContain('--purge');
+    expect(result.stdout).toContain('--yes');
+    expect(result.stdout).toContain('setup --apply');
+    expect(result.stdout).toContain('--workspace-mode');
+    expect(result.stdout).not.toContain('--browser');
+  });
+
+  it('applies AI-guided setup choices through the deterministic CLI path', async () => {
+    const homeDir = mkdtempSync(join(tmpdir(), 'xangi-cli-guided-'));
+    const binDir = join(homeDir, 'bin');
+    const configHome = join(homeDir, 'config');
+    const workspace = join(homeDir, 'workspace');
+    mkdirSync(binDir, { recursive: true });
+    const codex = join(binDir, 'codex');
+    writeFileSync(codex, '#!/bin/sh\necho "codex test"\n');
+    chmodSync(codex, 0o755);
+
+    const result = await runCli(
+      [
+        'setup',
+        '--apply',
+        '--backend',
+        'codex',
+        '--workspace',
+        workspace,
+        '--workspace-mode',
+        'blank',
+      ],
+      {
+        HOME: homeDir,
+        XDG_CONFIG_HOME: configHome,
+        XDG_DATA_HOME: join(homeDir, 'data'),
+        XDG_STATE_HOME: join(homeDir, 'state'),
+        PATH: `${binDir}:${process.env.PATH || ''}`,
+      }
+    );
+
+    expect(result.code).toBe(0);
+    expect(result.stdout).toContain('AIとの対話を続けてください');
+    expect(JSON.parse(readFileSync(join(configHome, 'xangi', 'xangi.json'), 'utf8'))).toMatchObject(
+      {
+        backend: 'codex',
+        workspacePath: workspace,
+        notionSyncEnabled: false,
+      }
+    );
+    expect(readFileSync(join(workspace, 'BOOTSTRAP.md'), 'utf8')).toContain(
+      'すべて日本語で一度に一つずつ質問'
+    );
+  });
 
   it('lists sessions via the Even Terminal compatible API', async () => {
     const result = await runCli(['sessions', '--url', serverUrl, '--token', 'secret']);
@@ -200,7 +263,73 @@ exit 0
     expect(result.code).toBe(0);
     const log = readFileSync(fakePm2.logFile, 'utf8');
     expect(log).toContain('describe xangi-prod');
-    expect(log).toContain('restart xangi-prod');
+    expect(log).toContain('delete xangi-prod');
+    expect(log).toContain('start ecosystem.config.cjs --only xangi-prod');
+  });
+
+  it('uses the checkout workspace state with the saved setup config', async () => {
+    const fakePm2 = createFakePm2();
+    const homeDir = mkdtempSync(join(tmpdir(), 'xangi-checkout-setup-'));
+    const configHome = join(homeDir, 'config');
+    const xangiDir = mkdtempSync(join(tmpdir(), 'xangi-dir-'));
+    const workspace = join(homeDir, 'workspace');
+    mkdirSync(join(configHome, 'xangi'), { recursive: true });
+    mkdirSync(workspace, { recursive: true });
+    mkdirSync(join(xangiDir, '.git'));
+    writeFileSync(
+      join(configHome, 'xangi', 'xangi.json'),
+      JSON.stringify({ backend: 'codex', workspacePath: workspace, webChatEnabled: true })
+    );
+    writeFileSync(join(xangiDir, '.env'), 'XANGI_PROCESS_NAME=xangi-dev\n');
+    writeFileSync(join(xangiDir, 'ecosystem.config.cjs'), 'module.exports = { apps: [] };\n');
+
+    const result = await runCli(['service', 'restart', '--dir', xangiDir], {
+      HOME: homeDir,
+      XDG_CONFIG_HOME: configHome,
+      XDG_DATA_HOME: join(homeDir, 'data'),
+      XDG_STATE_HOME: join(homeDir, 'state'),
+      PM2_LOG: fakePm2.logFile,
+      PATH: `${fakePm2.dir}:${process.env.PATH || ''}`,
+    });
+
+    expect(result.code).toBe(0);
+    const log = readFileSync(fakePm2.logFile, 'utf8');
+    expect(log).toContain(
+      `runtime=${join(configHome, 'xangi', 'xangi.json')}|${join(workspace, '.xangi')}`
+    );
+    expect(log).toContain('start ecosystem.config.cjs --only xangi-dev');
+  });
+
+  it('keeps an explicit checkout DATA_DIR when loading the saved setup config', async () => {
+    const fakePm2 = createFakePm2();
+    const homeDir = mkdtempSync(join(tmpdir(), 'xangi-checkout-data-dir-'));
+    const configHome = join(homeDir, 'config');
+    const xangiDir = mkdtempSync(join(tmpdir(), 'xangi-dir-'));
+    const workspace = join(homeDir, 'workspace');
+    const checkoutState = join(homeDir, 'checkout-state');
+    mkdirSync(join(configHome, 'xangi'), { recursive: true });
+    mkdirSync(join(xangiDir, '.git'));
+    writeFileSync(
+      join(configHome, 'xangi', 'xangi.json'),
+      JSON.stringify({ backend: 'codex', workspacePath: workspace, webChatEnabled: true })
+    );
+    writeFileSync(
+      join(xangiDir, '.env'),
+      `XANGI_PROCESS_NAME=xangi-dev\nDATA_DIR=${checkoutState}\n`
+    );
+    writeFileSync(join(xangiDir, 'ecosystem.config.cjs'), 'module.exports = { apps: [] };\n');
+
+    const result = await runCli(['service', 'restart', '--dir', xangiDir], {
+      HOME: homeDir,
+      XDG_CONFIG_HOME: configHome,
+      PM2_LOG: fakePm2.logFile,
+      PATH: `${fakePm2.dir}:${process.env.PATH || ''}`,
+    });
+
+    expect(result.code).toBe(0);
+    expect(readFileSync(fakePm2.logFile, 'utf8')).toContain(
+      `runtime=${join(configHome, 'xangi', 'xangi.json')}|${checkoutState}`
+    );
   });
 
   it('starts from PM2 config when the PM2 service is not registered yet', async () => {
@@ -217,8 +346,8 @@ exit 0
 
     expect(result.code).toBe(0);
     const log = readFileSync(fakePm2.logFile, 'utf8');
-    expect(log).toContain('describe xangi-dev');
-    expect(log).toContain('start ecosystem.config.cjs');
+    expect(log).not.toContain('delete xangi-dev');
+    expect(log).toContain('start ecosystem.config.cjs --only xangi-dev');
   });
 
   it('saves the PM2 process list and prints startup guidance for service autostart', async () => {

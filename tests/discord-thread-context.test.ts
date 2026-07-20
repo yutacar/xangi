@@ -84,17 +84,35 @@ describe('getDiscordChannelTopic', () => {
 });
 
 describe('buildDiscordChannelContextLine', () => {
-  it('新規スレッドを作成した場合は親チャンネル名とスレッド名を両方表示する', () => {
+  it('スレッドでは親チャンネル名・IDとスレッド名・IDを両方表示する', () => {
     expect(
       buildDiscordChannelContextLine({
         channelName: 'dev_xangi',
         conversationChannelId: 'thread-456',
-        createdThreadName: 'thread title',
+        settingsChannelId: 'parent-123',
+        threadName: 'thread title',
+        parentChannelName: 'dev_xangi',
       })
-    ).toBe('[チャンネル: #dev_xangi / thread: thread title (ID: thread-456)]');
+    ).toBe(
+      '[チャンネル: #dev_xangi (ID: parent-123) / thread: thread title (ID: thread-456)]'
+    );
   });
 
-  it('通常チャンネルや既存スレッドでは従来のチャンネル表示を使う', () => {
+  it('親チャンネル名が取得できなくても親IDを表示する', () => {
+    expect(
+      buildDiscordChannelContextLine({
+        channelName: 'thread title',
+        conversationChannelId: 'thread-456',
+        settingsChannelId: 'parent-123',
+        threadName: 'thread title',
+        parentChannelName: null,
+      })
+    ).toBe(
+      '[チャンネル: 親チャンネル (ID: parent-123) / thread: thread title (ID: thread-456)]'
+    );
+  });
+
+  it('通常チャンネルでは従来のチャンネル表示を使う', () => {
     expect(
       buildDiscordChannelContextLine({
         channelName: 'dev_xangi',
@@ -183,6 +201,12 @@ describe('Discord thread run lock', () => {
     expect(firstMessage.startThread).toHaveBeenCalledTimes(1);
     expect(secondMessage.startThread).toHaveBeenCalledTimes(1);
     expect(runStream).toHaveBeenCalledTimes(2);
+    expect(runStream.mock.calls[0][0]).toContain(
+      '[チャンネル: #dev_xangi (ID: 123) / thread: thread-1001 (ID: 9001)]'
+    );
+    expect(runStream.mock.calls[1][0]).toContain(
+      '[チャンネル: #dev_xangi (ID: 123) / thread: thread-1002 (ID: 9002)]'
+    );
     expect(runStream.mock.calls[0][2]).toEqual(
       expect.objectContaining({ channelId: '9001', appSessionId: expect.any(String) })
     );
@@ -242,6 +266,9 @@ describe('Discord thread run lock', () => {
 
     expect(runStream).toHaveBeenCalledTimes(1);
     const prompt = runStream.mock.calls[0][0] as string;
+    expect(prompt).toContain(
+      '[チャンネル: #dev_pr_check (ID: 123) / thread: 詳しく教えて (ID: thread-123)]'
+    );
     expect(prompt).toContain('🧵 スレッド元 (starter#0001):');
     expect(prompt).toContain('Don’t rewrite your CLI for agents');
     expect(prompt).toContain('詳しく教えて');
@@ -452,7 +479,7 @@ function createExistingThreadMessage(params: {
     id: params.threadId,
     name: '詳しく教えて',
     parentId: params.parentChannelId,
-    parent: params.parentTopic ? { topic: params.parentTopic } : null,
+    parent: { name: 'dev_pr_check', topic: params.parentTopic ?? null },
     isThread: () => true,
     fetchStarterMessage: vi.fn().mockResolvedValue(starterMessage),
     send: vi.fn().mockResolvedValue(replyMessage),

@@ -36,7 +36,92 @@ flowchart LR
     class External ext;
 ```
 
-## Quick Start
+## For users
+
+### 1. Set up an AI coding tool
+
+xangi's guided setup uses Codex, Claude Code, Cursor Agent, Grok Build, or Antigravity. The dedicated script is independent of xangi and can also be used to set up only an AI coding tool.
+
+```bash
+bash <(curl -fsSL https://github.com/karaage0703/xangi/releases/latest/download/setup-ai-tools.sh) codex
+```
+
+Replace the last argument with `codex`, `claude-code`, `cursor`, `grok`, or `antigravity`. Use `check` as the last argument to inspect installation and authentication without changing them. The script installs a missing tool using its vendor's official installer and starts interactive authentication. Codex requires Node.js and npm; if either is unavailable, the script stops and prints the prerequisite URL.
+
+### 2. Install xangi
+
+Paste the same command into a terminal on macOS, Linux, or WSL2:
+
+```bash
+curl -fsSL https://github.com/karaage0703/xangi/releases/latest/download/install.sh | bash
+```
+
+The installer detects the operating system and CPU, installs xangi, starts AI-guided setup, and starts the service. Run it from any directory. If the AI tool is not installed or authenticated yet, the installer keeps xangi installed and stops safely; continue later with `xangi setup`.
+
+### Minimum flow and recovery commands
+
+Normally, the installer runs setup and starts the service automatically. Finish by checking the result with `doctor`.
+
+```text
+Prepare an AI tool → install xangi → setup → start the service → doctor
+```
+
+If the flow stops partway through, resume in this order:
+
+1. `xangi setup`
+   - Interactively saves the workspace, selected AI, and initial xangi configuration.
+   - Resume here after waiting for AI tool installation or authentication, or after leaving setup midway.
+2. `xangi install`
+   - Registers and starts the managed OS service.
+   - The installer normally runs this automatically; use it only after resuming `setup` manually.
+3. `xangi doctor`
+   - Diagnoses the service, Web Chat, and whether the configured workspace matches the running workspace.
+   - Run this first when you are unsure where the flow stopped.
+
+### Start using xangi
+
+After setup, xangi runs as a service, so no additional start command is required.
+
+- Browser: open `http://127.0.0.1:18888`
+- Discord and other chat platforms: message the bot configured during setup
+- Health check: run `xangi doctor`
+
+If `xangi` is not on PATH, use the absolute Launcher path printed by the installer.
+
+### Installing multiple xangi instances on one machine
+
+The Gitless managed distribution currently supports one instance per OS user. Running the install command again as the same user updates and reconfigures that instance; it does not create a second one. A different Mac or PC, or a separate OS user on the same computer, has an independent home directory and can run the same install command safely.
+
+Named managed instances under one OS user are not supported yet. Use separate OS users for now. The multiple-clone, PM2, and Docker guidance later in this README is for source-checkout developers, not the Gitless managed distribution.
+
+### Token settings
+
+When setup needs Discord, Slack, LINE, Telegram, or Notion tokens, open the local settings page with one command:
+
+```bash
+xangi settings
+```
+
+Values never enter the AI conversation or shell history. xangi stores them with mode 0600 in the OS-specific secret area. The temporary page binds only to `127.0.0.1`, never sends stored values back to the browser, and shuts down after saving.
+
+### Settings and updates
+
+```bash
+xangi settings
+xangi setup
+xangi doctor
+xangi update
+xangi uninstall
+xangi notion-sync enable
+```
+
+For Notion sync, save the token and destination parent page with `xangi settings`, then enable it. See the [usage guide](docs/en/usage.md) for detailed commands, update and rollback behavior, and OS-specific paths.
+
+To remove a managed installation, run `xangi uninstall`. It removes the service, scheduled updates, and xangi application while retaining the workspace, settings, tokens, and history, so the same install command can reinstall it immediately. Use `xangi uninstall --purge --yes` for a full settings and history reset. Neither command removes the workspace.
+
+## For developers and advanced users
+
+Everything below is for contributors who clone xangi with Git. Building xangi from source requires Node.js 22+ and npm. Regular users do not run these commands.
 
 ### 1. Configure environment variables
 
@@ -69,7 +154,7 @@ DISCORD_ALLOWED_USER=123456789012345678
 # Antigravity CLI: curl -fsSL https://antigravity.google/cli/install.sh | bash
 # Local LLM:   Install Ollama (https://ollama.com)
 
-npm install
+npm ci
 npm run build
 npm start
 
@@ -200,7 +285,10 @@ A starter kit with pre-configured skills (note-taking, diary, transcription, Not
 
 ## Related Projects
 
+### Device and wearable integrations
+
 - [xangi-stackchan](https://github.com/karaage0703/xangi-stackchan) - A resident bridge that makes a Stack-chan (M5Stack) speak xangi's responses with facial expressions and head movement, by subscribing to the [external event stream](docs/en/events.md) (SSE)
+- [xangi-even-g2](https://github.com/karaage0703/xangi-even-g2) - An Even Hub app, bridge, and local Whisper STT server for browsing xangi sessions, sending voice input, and viewing responses on Even Realities G2
 
 ## Book
 

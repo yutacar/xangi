@@ -73,11 +73,17 @@ Add this value to `TELEGRAM_ALLOWED_CHATS`. Group IDs are typically negative (e.
 
 Forward a message from the target bot to [@userinfobot](https://t.me/userinfobot), or read the ID from xangi's logs. Add the numeric ID to `TELEGRAM_ALLOWED_BOTS`.
 
-## 4. Configure xangi `.env`
+## 4. Set the token
 
 ```bash
-TELEGRAM_BOT_TOKEN=<API token issued by BotFather>
+xangi settings
+```
 
+Paste the API token issued by BotFather into the Telegram field on the local settings page and save it. The optional webhook secret can be saved on the same page.
+
+In a source checkout, non-secret advanced settings such as allowed user IDs can still be placed in `.env`:
+
+```bash
 # Allowed users (numeric Telegram user IDs, CSV). Use "*" to allow everyone.
 TELEGRAM_ALLOWED_USER=123456789,987654321
 
@@ -95,7 +101,6 @@ TELEGRAM_MODE=polling                        # polling | webhook
 
 # Required when using webhook mode:
 # TELEGRAM_WEBHOOK_URL=https://your-host.example.com  # public URL used to register the webhook with Telegram
-# TELEGRAM_WEBHOOK_SECRET_TOKEN=your-long-random-secret  # rejects requests that don't carry this token
 
 # Optional: webhook server settings
 # TELEGRAM_WEBHOOK_PORT=8766                # listening port (default: 8766)
@@ -139,7 +144,7 @@ In groups, xangi posts the initial processing message and edits it once with the
 
 ## 6. Security
 
-- Store `TELEGRAM_BOT_TOKEN` in `.env` and never commit it (`.env` is in `.gitignore`)
+- Store `TELEGRAM_BOT_TOKEN` through `xangi settings`; never paste it into Git or an AI conversation
 - Avoid `*` for `TELEGRAM_ALLOWED_USER` in shared or public environments
 - `TELEGRAM_ALLOWED_BOTS` requires explicit numeric IDs; wildcard `*` is not supported
 - Set `TELEGRAM_ALLOWED_CHATS` to restrict xangi to specific groups

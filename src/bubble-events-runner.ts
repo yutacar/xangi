@@ -39,6 +39,8 @@ export interface BubbleEventContext {
   platform: Platform;
   /** turn.started に乗せる userText (任意) */
   userText?: string;
+  /** UI内部メタデータを共通eventsから除外する場合のみ指定。 */
+  eventTextSanitizer?: (text: string) => string;
 }
 
 const CANCEL_MESSAGE = 'Request cancelled by user';
@@ -50,10 +52,11 @@ export async function runWithBubbleEvents(
   callbacks: StreamCallbacks = {},
   options?: RunOptions
 ): Promise<RunResult> {
-  const { userText, ...eventBase } = ctx;
+  const { userText, eventTextSanitizer, ...eventBase } = ctx;
   startActivity(ctx);
   events.turnStarted({ ...eventBase, userText });
   let errorEmitted = false;
+  let lastPublicText = '';
   try {
     const runOptions = {
       ...options,
@@ -65,8 +68,21 @@ export async function runWithBubbleEvents(
       {
         onBackendReady: () => callbacks.onBackendReady?.(),
         onText: (chunk, fullText) => {
-          updateActivityText(ctx, fullText);
-          events.messageDelta({ ...eventBase, chunk, fullText });
+          const publicFullText = eventTextSanitizer ? eventTextSanitizer(fullText) : fullText;
+          const publicChunk = eventTextSanitizer
+            ? publicFullText.startsWith(lastPublicText)
+              ? publicFullText.slice(lastPublicText.length)
+              : eventTextSanitizer(chunk)
+            : chunk;
+          updateActivityText(ctx, publicFullText);
+          if (publicChunk) {
+            events.messageDelta({
+              ...eventBase,
+              chunk: publicChunk,
+              fullText: publicFullText,
+            });
+          }
+          lastPublicText = publicFullText;
           callbacks.onText?.(chunk, fullText);
         },
         onToolUse: (toolName, toolInput) => {
@@ -74,8 +90,11 @@ export async function runWithBubbleEvents(
           callbacks.onToolUse?.(toolName, toolInput);
         },
         onComplete: (result) => {
-          completeActivity(ctx, result.result);
-          events.turnComplete({ ...eventBase, text: result.result });
+          const publicResult = eventTextSanitizer
+            ? eventTextSanitizer(result.result)
+            : result.result;
+          completeActivity(ctx, publicResult);
+          events.turnComplete({ ...eventBase, text: publicResult });
           callbacks.onComplete?.(result);
         },
         onError: (error) => {

@@ -71,7 +71,7 @@ export function formatToolHistoryDisclosure(toolHistory: string[]): string {
 export function formatInternalContextCommand(command: string): string | null {
   const normalized = command.replace(/\s+/g, ' ');
 
-  if (/(^|["'\s])xangi-cmd discord_history\b/.test(normalized)) {
+  if (/(^|["'\s])xangi-cmd discord_(?:history|message)\b/.test(normalized)) {
     return '🔧 Discord履歴確認';
   }
   if (/\b(?:127\.0\.0\.1|localhost):7890\/search\b/.test(normalized)) {
