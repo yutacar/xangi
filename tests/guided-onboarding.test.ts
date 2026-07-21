@@ -1,4 +1,4 @@
-import { mkdir, mkdtemp, readFile, rm, unlink, writeFile } from 'node:fs/promises';
+import { chmod, mkdir, mkdtemp, readFile, rm, unlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
@@ -169,7 +169,11 @@ describe('guided setup backend preflight', () => {
     });
     expect(result).toContain('Claude Code');
     expect(onSelected).toHaveBeenCalledWith(
-      expect.objectContaining({ id: 'claude-code', version: 'test-version' })
+      expect.objectContaining({
+        id: 'claude-code',
+        executable: '/agents/claude',
+        version: 'test-version',
+      })
     );
     expect(launch).toHaveBeenCalledTimes(1);
     const prompt = launch.mock.calls[0]![1];
@@ -257,9 +261,14 @@ describe('guided setup deterministic apply and completion', () => {
   it('creates a blank workspace BOOTSTRAP and keeps Notion disabled', async () => {
     const { homeDir, layout } = await fixture();
     const workspacePath = join(homeDir, 'blank-workspace');
+    const binDir = join(homeDir, '.nvm', 'versions', 'node', 'v22.16.0', 'bin');
+    const backendExecutable = join(binDir, 'codex');
+    await mkdir(binDir, { recursive: true });
+    await writeFile(backendExecutable, '#!/bin/sh\nexit 0\n');
+    await chmod(backendExecutable, 0o700);
     await expect(
       applyGuidedSetup(
-        { backend: 'codex', workspacePath, workspaceMode: 'blank' },
+        { backend: 'codex', backendExecutable, workspacePath, workspaceMode: 'blank' },
         { layout, backendAvailable: async () => true }
       )
     ).resolves.toContain(workspacePath);
@@ -267,6 +276,7 @@ describe('guided setup deterministic apply and completion', () => {
     const config = JSON.parse(await readFile(layout.configFile, 'utf8'));
     expect(config).toEqual({
       backend: 'codex',
+      backendExecutable,
       workspacePath,
       webChatEnabled: true,
       webChatAccess: 'local',

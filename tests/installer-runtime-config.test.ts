@@ -24,6 +24,7 @@ describe('setup runtime config bridge', () => {
       configPath,
       JSON.stringify({
         backend: 'codex',
+        backendExecutable: '/Users/tester/.nvm/versions/node/v22.16.0/bin/codex',
         workspacePath: join(root, 'workspace'),
         webChatEnabled: true,
         webChatAccess: 'tailscale',
@@ -32,6 +33,7 @@ describe('setup runtime config bridge', () => {
     );
     await expect(loadSetupRuntimeEnv(configPath, join(root, 'state'))).resolves.toEqual({
       AGENT_BACKEND: 'codex',
+      XANGI_BACKEND_EXECUTABLE: '/Users/tester/.nvm/versions/node/v22.16.0/bin/codex',
       WORKSPACE_PATH: join(root, 'workspace'),
       DATA_DIR: join(root, 'state'),
       WEB_CHAT_ENABLED: 'true',

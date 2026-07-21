@@ -14,6 +14,7 @@ import { TimeoutController } from './timeout-controller.js';
 import { buildCliEnv, clearManagedCliProcess, registerManagedCliProcess } from './cli-process.js';
 import { appendJsonlChunk, flushJsonlBuffer } from './jsonl-buffer.js';
 import type { BaseRunnerOptions } from './base-runner.js';
+import { configuredBackendCommand } from './setup/backend-executable.js';
 
 /**
  * JSONL ストリームをランナー固有のイベント解釈に変換するパーサ。
@@ -175,10 +176,11 @@ export abstract class CliRunnerBase extends EventEmitter implements AgentRunner 
     opts: CollectOutputOptions = {}
   ): Promise<string> {
     return new Promise((resolve, reject) => {
-      const proc = spawn(this.command, args, {
+      const env = this.buildEnv(channelId);
+      const proc = spawn(configuredBackendCommand(this.command, env), args, {
         stdio: ['ignore', 'pipe', 'pipe'],
         cwd: this.workdir,
-        env: this.buildEnv(channelId),
+        env,
       });
       this.currentProcess = proc;
       registerManagedCliProcess(channelId, proc, this.activeProcesses, this.timeoutController);
@@ -230,10 +232,11 @@ export abstract class CliRunnerBase extends EventEmitter implements AgentRunner 
   ): Promise<RunResult> {
     return new Promise((resolve, reject) => {
       const parser = this.createStreamParser(callbacks);
-      const proc = spawn(this.command, args, {
+      const env = this.buildEnv(opts.channelId);
+      const proc = spawn(configuredBackendCommand(this.command, env), args, {
         stdio: ['ignore', 'pipe', 'pipe'],
         cwd: this.workdir,
-        env: this.buildEnv(opts.channelId),
+        env,
       });
       this.currentProcess = proc;
       registerManagedCliProcess(opts.channelId, proc, this.activeProcesses, this.timeoutController);

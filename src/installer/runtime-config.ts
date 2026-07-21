@@ -14,6 +14,7 @@ export async function loadSetupRuntimeEnv(
   const config = parseSetupConfig(JSON.parse(await readFile(configPath, 'utf8')) as unknown);
   return {
     AGENT_BACKEND: config.backend,
+    ...(config.backendExecutable ? { XANGI_BACKEND_EXECUTABLE: config.backendExecutable } : {}),
     WORKSPACE_PATH: config.workspacePath,
     DATA_DIR: stateDir,
     WEB_CHAT_ENABLED: String(config.webChatEnabled),

@@ -1,4 +1,5 @@
 import { execFile } from 'node:child_process';
+import { readFileSync } from 'node:fs';
 import { readFile, rm, writeFile } from 'node:fs/promises';
 import { arch as hostArch, homedir, platform as hostPlatform } from 'node:os';
 import { dirname, join } from 'node:path';
@@ -14,6 +15,9 @@ import {
   type UpdateSchedulerAdapter,
 } from '../installer/platform/update-scheduler.js';
 import type { AppLayout, ManifestPublicKey } from '../installer/types.js';
+import { managedServicePath } from '../installer/service-environment.js';
+import { streamTarListing } from '../installer/tar-listing.js';
+import { parseSetupConfig } from '../setup/schema.js';
 import {
   Updater,
   type ArtifactExtractor,
@@ -155,6 +159,7 @@ function createDefaultUpdateScheduler(layout: AppLayout, homeDir: string): Updat
 
 function createDefaultService(layout: AppLayout, homeDir: string, wsl?: boolean): ServiceAdapter {
   const logsDir = join(layout.stateDir, 'logs');
+  const servicePath = resolveManagedServicePath(layout, homeDir);
   if (layout.platform === 'linux') {
     return createLinuxServiceAdapter({
       unitName: 'xangi.service',
@@ -165,7 +170,7 @@ function createDefaultService(layout: AppLayout, homeDir: string, wsl?: boolean)
       stateDir: layout.stateDir,
       entrypoint: join(layout.currentLink, 'dist', 'index.js'),
       workingDirectory: layout.currentLink,
-      path: `${join(homeDir, '.local', 'bin')}:${join(homeDir, '.npm-global', 'bin')}:/usr/local/bin:/usr/bin:/bin`,
+      path: servicePath,
       wsl,
     });
   }
@@ -179,9 +184,21 @@ function createDefaultService(layout: AppLayout, homeDir: string, wsl?: boolean)
     workingDirectory: layout.currentLink,
     stdoutPath: join(logsDir, 'xangi.log'),
     stderrPath: join(logsDir, 'xangi.error.log'),
-    path: '/usr/local/bin:/opt/homebrew/bin:/usr/bin:/bin',
+    path: servicePath,
     plistPath: join(homeDir, 'Library', 'LaunchAgents', 'dev.xangi.app.plist'),
   });
+}
+
+export function resolveManagedServicePath(layout: AppLayout, homeDir: string): string {
+  let backendExecutable: string | undefined;
+  try {
+    backendExecutable = parseSetupConfig(
+      JSON.parse(readFileSync(layout.configFile, 'utf8')) as unknown
+    ).backendExecutable;
+  } catch {
+    // install before setup and legacy configs use the safe platform baseline.
+  }
+  return managedServicePath(layout, homeDir, backendExecutable);
 }
 
 async function readPublicKey(path: string): Promise<Buffer> {
@@ -279,22 +296,17 @@ async function readLimitedBody(
   return bytes;
 }
 
-async function extractTarGzip(artifact: Uint8Array, destination: string): Promise<void> {
+export async function extractTarGzip(artifact: Uint8Array, destination: string): Promise<void> {
   const archivePath = join(
     dirname(destination),
     `.xangi-artifact-${process.pid}-${Date.now()}.tar.gz`
   );
   try {
     await writeFile(archivePath, artifact, { mode: 0o600 });
-    const listing = await execFileAsync('tar', ['-tzf', archivePath], {
-      env: { ...process.env, LC_ALL: 'C' },
-      encoding: 'utf8',
-    });
-    const verboseListing = await execFileAsync('tar', ['-tvzf', archivePath], {
-      env: { ...process.env, LC_ALL: 'C' },
-      encoding: 'utf8',
-    });
-    validateTarListing(listing.stdout, verboseListing.stdout);
+    const state: ReleaseTarValidationState = {};
+    await streamTarListing(archivePath, false, (line) => validateReleasePath(line, state));
+    if (!state.archiveRoot) throw new Error('Release archive is empty');
+    await streamTarListing(archivePath, true, validateReleaseType);
     await execFileAsync('tar', ['-xzf', archivePath, '-C', destination, '--strip-components', '1']);
   } finally {
     await rm(archivePath, { force: true });
@@ -304,31 +316,43 @@ async function extractTarGzip(artifact: Uint8Array, destination: string): Promis
 export function validateTarListing(pathsOutput: string, verboseOutput: string): void {
   const paths = pathsOutput.split(/\r?\n/).filter(Boolean);
   if (paths.length === 0) throw new Error('Release archive is empty');
-  let archiveRoot: string | undefined;
+  const state: ReleaseTarValidationState = {};
   for (const path of paths) {
-    const parts = path.split('/').filter(Boolean);
-    if (
-      path.startsWith('/') ||
-      path.startsWith('\\') ||
-      path.includes('\\') ||
-      [...path].some((character) => {
-        const code = character.charCodeAt(0);
-        return code <= 31 || code === 127;
-      }) ||
-      parts.includes('..') ||
-      parts.length < 2
-    ) {
-      throw new Error(`Unsafe release archive path: ${path}`);
-    }
-    archiveRoot ??= parts[0];
-    if (parts[0] !== archiveRoot) {
-      throw new Error('Release archive must contain exactly one top-level directory');
-    }
+    validateReleasePath(path, state);
   }
   for (const line of verboseOutput.split(/\r?\n/).filter(Boolean)) {
-    if (!line.startsWith('-') && !line.startsWith('d')) {
-      throw new Error('Release archive may contain only regular files and directories');
-    }
+    validateReleaseType(line);
+  }
+}
+
+interface ReleaseTarValidationState {
+  archiveRoot?: string;
+}
+
+function validateReleasePath(path: string, state: ReleaseTarValidationState): void {
+  const parts = path.split('/').filter(Boolean);
+  if (
+    path.startsWith('/') ||
+    path.startsWith('\\') ||
+    path.includes('\\') ||
+    [...path].some((character) => {
+      const code = character.charCodeAt(0);
+      return code <= 31 || code === 127;
+    }) ||
+    parts.includes('..') ||
+    parts.length < 2
+  ) {
+    throw new Error(`Unsafe release archive path: ${path}`);
+  }
+  state.archiveRoot ??= parts[0];
+  if (parts[0] !== state.archiveRoot) {
+    throw new Error('Release archive must contain exactly one top-level directory');
+  }
+}
+
+function validateReleaseType(line: string): void {
+  if (!line.startsWith('-') && !line.startsWith('d')) {
+    throw new Error('Release archive may contain only regular files and directories');
   }
 }
 
