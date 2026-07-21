@@ -8,8 +8,30 @@ import {
   type DarwinCommandRunner,
   type DarwinServiceOptions,
 } from '../src/installer/platform/darwin.js';
+import { managedServicePath } from '../src/installer/service-environment.js';
+import { resolveAppLayout } from '../src/installer/layout.js';
 
 describe('renderLaunchAgentPlist', () => {
+  it('includes an NVM backend directory in the managed LaunchAgent PATH', () => {
+    const homeDir = '/Users/tester';
+    const layout = resolveAppLayout({ platform: 'darwin', arch: 'arm64', homeDir });
+    const executable = `${homeDir}/.nvm/versions/node/v22.16.0/bin/codex`;
+    const plist = renderLaunchAgentPlist({
+      label: 'dev.xangi.app',
+      nodePath: '/opt/xangi/node',
+      entrypoint: '/opt/xangi/dist/index.js',
+      configLoaderPath: '/opt/xangi/dist/installer/runtime-config-main.js',
+      configPath: `${homeDir}/Library/Application Support/xangi/config/xangi.json`,
+      stateDir: `${homeDir}/Library/Application Support/xangi/state`,
+      workingDirectory: `${homeDir}/Library/Application Support/xangi/app/current`,
+      stdoutPath: '/tmp/xangi.log',
+      stderrPath: '/tmp/xangi.error.log',
+      path: managedServicePath(layout, homeDir, executable),
+    });
+    expect(plist).toContain(`${homeDir}/.nvm/versions/node/v22.16.0/bin`);
+    expect(plist).toContain('/opt/homebrew/bin');
+  });
+
   it('renders explicit executable, config, workdir, logs, and a deterministic PATH', () => {
     const plist = renderLaunchAgentPlist({
       label: 'jp.example.xangi',

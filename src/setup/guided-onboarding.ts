@@ -19,12 +19,14 @@ import { delimiter, dirname, isAbsolute, join } from 'node:path';
 import readline from 'node:readline/promises';
 import type { SetupBackend } from './schema.js';
 import { parseSetupConfig } from './schema.js';
+import { verifyBackendExecutable } from './backend-executable.js';
 import { SetupStore } from './store.js';
 import type { AppLayout } from '../installer/types.js';
 
 export interface OnboardingStatus {
   phase: 'preflight' | 'bootstrap_in_progress' | 'minimum_ready';
   backend?: string;
+  backendExecutable?: string;
   workspacePath?: string;
   workspaceMode?: string;
   webChatAccess?: string;
@@ -135,6 +137,7 @@ export async function detectGuidedBackends(
   const detected: DetectedBackend[] = [];
   for (const backend of GUIDED_BACKENDS) {
     for (const directory of directories) {
+      if (!isAbsolute(directory)) continue;
       const executable = join(directory, backend.command);
       if (!(await canExecute(executable))) continue;
       const detectedVersion = version(executable);
@@ -401,6 +404,7 @@ export type WorkspaceMode = 'existing' | 'template' | 'blank';
 
 export interface ApplySetupOptions {
   backend: string;
+  backendExecutable?: string;
   workspacePath: string;
   workspaceMode: string;
   notionSyncEnabled?: boolean;
@@ -411,7 +415,7 @@ export interface ApplySetupOptions {
 export interface ApplySetupDependencies {
   layout: AppLayout;
   initializeTemplate?: (layout: AppLayout) => Promise<unknown>;
-  backendAvailable?: (backend: SetupBackend) => Promise<boolean>;
+  backendAvailable?: (backend: SetupBackend, executable?: string) => Promise<boolean>;
 }
 
 const BLANK_BOOTSTRAP = `# BOOTSTRAP.md
@@ -467,6 +471,8 @@ export async function readOnboardingStatus(layout: AppLayout): Promise<Onboardin
     return {
       phase: value.phase,
       backend: typeof value.backend === 'string' ? value.backend : undefined,
+      backendExecutable:
+        typeof value.backendExecutable === 'string' ? value.backendExecutable : undefined,
       workspacePath: typeof value.workspacePath === 'string' ? value.workspacePath : undefined,
       workspaceMode: typeof value.workspaceMode === 'string' ? value.workspaceMode : undefined,
       webChatAccess: typeof value.webChatAccess === 'string' ? value.webChatAccess : undefined,
@@ -493,7 +499,13 @@ export async function applyGuidedSetup(
     throw new Error('workspace modeはexisting、template、blankのいずれかです');
   }
   const backend = options.backend as SetupBackend;
-  if (dependencies.backendAvailable && !(await dependencies.backendAvailable(backend))) {
+  const backendExecutable = options.backendExecutable
+    ? await verifyBackendExecutable(backend, options.backendExecutable)
+    : undefined;
+  if (
+    dependencies.backendAvailable &&
+    !(await dependencies.backendAvailable(backend, backendExecutable))
+  ) {
     throw new Error(`選択したbackend ${backend}は現在利用できません`);
   }
   const mode = options.workspaceMode as WorkspaceMode;
@@ -519,6 +531,7 @@ export async function applyGuidedSetup(
   try {
     await new SetupStore(dependencies.layout.configFile).save({
       backend,
+      ...(backendExecutable ? { backendExecutable } : {}),
       workspacePath: options.workspacePath,
       webChatEnabled: options.webChatEnabled ?? true,
       webChatAccess: options.webChatAccess ?? 'local',

@@ -16,6 +16,7 @@ import type { ChatPlatform } from './prompts/index.js';
 import { logPrompt, logResponse, logError } from './transcript-logger.js';
 import { buildCliEnv } from './cli-process.js';
 import { appendJsonlChunk } from './jsonl-buffer.js';
+import { configuredBackendCommand } from './setup/backend-executable.js';
 
 /**
  * リクエストキューのアイテム
@@ -165,10 +166,11 @@ export class PersistentRunner extends EventEmitter implements AgentRunner {
 
     console.log('[persistent-runner] Starting persistent process...');
 
-    const proc = spawn('claude', args, {
+    const env = this.buildEnv();
+    const proc = spawn(configuredBackendCommand('claude', env), args, {
       stdio: ['pipe', 'pipe', 'pipe'],
       cwd: this.workdir,
-      env: this.buildEnv(),
+      env,
     });
     this.process = proc;
     this.processAlive = true;
