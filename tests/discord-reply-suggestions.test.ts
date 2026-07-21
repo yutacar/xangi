@@ -46,6 +46,29 @@ describe('Discord reply suggestions', () => {
     );
   });
 
+  it('keeps body text that merely mentions the marker prefix in prose', () => {
+    // 実際に途中切れを起こした本文パターン。マーカー名を引用しただけで以降が消えていた。
+    const output = "切り取り基準を `indexOf('<xangi_reply')` に広げた副作用。この後の文も残る。";
+    expect(stripReplySuggestionMarkup(output)).toBe(output);
+  });
+
+  it('keeps a fully-quoted opener tag when normal prose follows it', () => {
+    const output = '`<xangi_reply_suggestions>` について説明する。この後の文も残る。';
+    expect(stripReplySuggestionMarkup(output)).toBe(output);
+  });
+
+  it('hides a completed block that sits at the very end', () => {
+    expect(
+      stripReplySuggestionMarkup(
+        '回答です。\n<xangi_reply_suggestions>["a"]</xangi_reply_suggestions>'
+      )
+    ).toBe('回答です。');
+  });
+
+  it('hides a trailing opener fragment during streaming', () => {
+    expect(stripReplySuggestionMarkup('回答です。\n<xangi_reply_sugg')).toBe('回答です。');
+  });
+
   it('appends numbered suggestions to the visible response', () => {
     expect(formatNumberedSuggestions(['はい', 'いいえ'])).toBe('1. はい\n2. いいえ');
   });
