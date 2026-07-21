@@ -15,6 +15,7 @@ import { dirname, join, resolve } from 'node:path';
 import { promisify } from 'node:util';
 import { parseSetupConfig } from '../setup/schema.js';
 import type { AppLayout } from './types.js';
+import { streamTarListing } from './tar-listing.js';
 
 const execFileAsync = promisify(execFile);
 const STATE_KEYS = [
@@ -178,15 +179,11 @@ export async function extractWorkspaceTarGzip(
   );
   try {
     await writeFile(archivePath, artifact, { mode: 0o600 });
-    const listing = await execFileAsync('tar', ['-tzf', archivePath], {
-      env: { ...process.env, LC_ALL: 'C' },
-      encoding: 'utf8',
-    });
-    const verbose = await execFileAsync('tar', ['-tvzf', archivePath], {
-      env: { ...process.env, LC_ALL: 'C' },
-      encoding: 'utf8',
-    });
-    validateWorkspaceTarListing(listing.stdout, verbose.stdout);
+    const state: WorkspaceTarValidationState = { hasFile: false };
+    await streamTarListing(archivePath, false, (line) => validateWorkspacePath(line, state));
+    if (!state.archiveRoot) throw new Error('Workspace template archive is empty');
+    await streamTarListing(archivePath, true, (line) => validateWorkspaceType(line, state));
+    if (!state.hasFile) throw new Error('Workspace template archive contains no files');
     await execFileAsync('tar', ['-xzf', archivePath, '-C', destination, '--strip-components', '1']);
   } finally {
     await rm(archivePath, { force: true });
@@ -196,42 +193,54 @@ export async function extractWorkspaceTarGzip(
 export function validateWorkspaceTarListing(pathsOutput: string, verboseOutput: string): void {
   const paths = pathsOutput.split(/\r?\n/).filter(Boolean);
   if (paths.length === 0) throw new Error('Workspace template archive is empty');
-  let archiveRoot: string | undefined;
-  let hasFile = false;
+  const state: WorkspaceTarValidationState = { hasFile: false };
   for (const archivePath of paths) {
-    const parts = archivePath.split('/').filter(Boolean);
-    if (
-      archivePath.startsWith('/') ||
-      archivePath.startsWith('\\') ||
-      archivePath.includes('\\') ||
-      [...archivePath].some((character) => {
-        const code = character.charCodeAt(0);
-        return code <= 31 || code === 127;
-      }) ||
-      parts.includes('..') ||
-      parts.length === 0
-    ) {
-      throw new Error(`Unsafe workspace template archive path: ${archivePath}`);
-    }
-    archiveRoot ??= parts[0];
-    if (parts[0] !== archiveRoot) {
-      throw new Error('Workspace template archive must contain exactly one top-level directory');
-    }
-    if (parts.length === 1 && !archivePath.endsWith('/')) {
-      throw new Error(`Unsafe workspace template archive path: ${archivePath}`);
-    }
+    validateWorkspacePath(archivePath, state);
   }
   for (const line of verboseOutput.split(/\r?\n/).filter(Boolean)) {
-    if (line.startsWith('-')) hasFile = true;
-    else if (line.startsWith('l')) {
-      if (!archiveRoot || !isAllowedSkillLink(line, archiveRoot)) {
-        throw new Error('Workspace template archive contains an unsafe symbolic link');
-      }
-    } else if (!line.startsWith('d')) {
-      throw new Error('Workspace template archive may contain only regular files and directories');
-    }
+    validateWorkspaceType(line, state);
   }
-  if (!hasFile) throw new Error('Workspace template archive contains no files');
+  if (!state.hasFile) throw new Error('Workspace template archive contains no files');
+}
+
+interface WorkspaceTarValidationState {
+  archiveRoot?: string;
+  hasFile: boolean;
+}
+
+function validateWorkspacePath(archivePath: string, state: WorkspaceTarValidationState): void {
+  const parts = archivePath.split('/').filter(Boolean);
+  if (
+    archivePath.startsWith('/') ||
+    archivePath.startsWith('\\') ||
+    archivePath.includes('\\') ||
+    [...archivePath].some((character) => {
+      const code = character.charCodeAt(0);
+      return code <= 31 || code === 127;
+    }) ||
+    parts.includes('..') ||
+    parts.length === 0
+  ) {
+    throw new Error(`Unsafe workspace template archive path: ${archivePath}`);
+  }
+  state.archiveRoot ??= parts[0];
+  if (parts[0] !== state.archiveRoot) {
+    throw new Error('Workspace template archive must contain exactly one top-level directory');
+  }
+  if (parts.length === 1 && !archivePath.endsWith('/')) {
+    throw new Error(`Unsafe workspace template archive path: ${archivePath}`);
+  }
+}
+
+function validateWorkspaceType(line: string, state: WorkspaceTarValidationState): void {
+  if (line.startsWith('-')) state.hasFile = true;
+  else if (line.startsWith('l')) {
+    if (!state.archiveRoot || !isAllowedSkillLink(line, state.archiveRoot)) {
+      throw new Error('Workspace template archive contains an unsafe symbolic link');
+    }
+  } else if (!line.startsWith('d')) {
+    throw new Error('Workspace template archive may contain only regular files and directories');
+  }
 }
 
 function isAllowedSkillLink(verboseLine: string, archiveRoot: string): boolean {

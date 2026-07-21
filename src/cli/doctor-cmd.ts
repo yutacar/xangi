@@ -6,6 +6,8 @@ import { delimiter, dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { resolveAppLayout } from '../installer/layout.js';
 import { parseSetupConfig, type SetupConfig } from '../setup/schema.js';
+import { BACKEND_COMMAND, verifyBackendExecutable } from '../setup/backend-executable.js';
+import { managedServicePath } from '../installer/service-environment.js';
 import { serviceCmd } from './service-cmd.js';
 
 export type DoctorLevel = 'ok' | 'warn' | 'error';
@@ -60,17 +62,43 @@ async function checkConfig(
   }
 }
 
-const BACKEND_COMMAND: Record<SetupConfig['backend'], string> = {
-  'claude-code': 'claude',
-  codex: 'codex',
-  cursor: 'cursor-agent',
-  grok: 'grok',
-  antigravity: 'agy',
-  'local-llm': 'ollama',
-};
-
-async function checkBackend(config: SetupConfig, pathEnv: string): Promise<DoctorCheck> {
+async function checkBackend(
+  config: SetupConfig,
+  pathEnv: string,
+  managedPath?: string
+): Promise<DoctorCheck> {
   const command = BACKEND_COMMAND[config.backend];
+  if (config.backendExecutable) {
+    try {
+      const executable = await verifyBackendExecutable(config.backend, config.backendExecutable);
+      const result = spawnSync(executable, ['--version'], {
+        encoding: 'utf8',
+        timeout: 5_000,
+        env: { ...process.env, PATH: managedPath ?? pathEnv },
+      });
+      if (result.status === 0) {
+        return { name: 'backend', level: 'ok', detail: `${executable} is service-ready` };
+      }
+      return {
+        name: 'backend',
+        level: 'error',
+        detail: `${executable} failed in the OS service environment; run xangi setup again`,
+      };
+    } catch {
+      return {
+        name: 'backend',
+        level: 'error',
+        detail: `saved executable ${config.backendExecutable} is unavailable or unsafe; run xangi setup again`,
+      };
+    }
+  }
+  if (managedPath !== undefined) {
+    return {
+      name: 'backend',
+      level: 'error',
+      detail: `${command} executable is not recorded for the OS service; run xangi setup again`,
+    };
+  }
   for (const directory of pathEnv.split(delimiter).filter(Boolean)) {
     try {
       await access(join(directory, command), constants.X_OK);
@@ -278,6 +306,9 @@ export async function collectDoctorChecks(options: DoctorOptions = {}): Promise<
     detail: `Node.js ${process.versions.node}`,
   });
 
+  const checkoutDir =
+    options.checkoutDir === false ? undefined : (options.checkoutDir ?? sourceCheckoutDir());
+
   const configResult = await checkConfig(
     options.configPath ?? join(layout.configDir, 'xangi.json')
   );
@@ -289,12 +320,18 @@ export async function collectDoctorChecks(options: DoctorOptions = {}): Promise<
     } catch {
       checks.push({ name: 'workspace', level: 'error', detail: 'configured path is unavailable' });
     }
-    checks.push(await checkBackend(configResult.config, options.pathEnv ?? process.env.PATH ?? ''));
+    checks.push(
+      await checkBackend(
+        configResult.config,
+        options.pathEnv ?? process.env.PATH ?? '',
+        checkoutDir
+          ? undefined
+          : managedServicePath(layout, homeDir, configResult.config.backendExecutable)
+      )
+    );
     checks.push(checkWebChatBind(configResult.config));
   }
 
-  const checkoutDir =
-    options.checkoutDir === false ? undefined : (options.checkoutDir ?? sourceCheckoutDir());
   const healthUrl =
     options.healthUrl ??
     (checkoutDir ? await checkoutHealthUrl(checkoutDir) : 'http://127.0.0.1:18888/health');

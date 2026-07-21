@@ -1,4 +1,4 @@
-import { chmod, mkdir, readFile, writeFile } from 'node:fs/promises';
+import { chmod, mkdir, readFile, unlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
@@ -19,6 +19,58 @@ afterEach(() => {
 });
 
 describe('collectDoctorChecks', () => {
+  it('checks a managed backend by its saved executable in the service PATH and reports moves', async () => {
+    const homeDir = join(tmpdir(), `xangi-doctor-managed-${process.pid}-${Date.now()}`);
+    const configPath = join(homeDir, 'config.json');
+    const workspacePath = join(homeDir, 'workspace');
+    const nvmBin = join(homeDir, '.nvm', 'versions', 'node', 'v22.16.0', 'bin');
+    const executable = join(nvmBin, 'codex');
+    await mkdir(workspacePath, { recursive: true });
+    await mkdir(nvmBin, { recursive: true });
+    await writeFile(
+      executable,
+      '#!/bin/sh\ncommand -v codex >/dev/null\nprintf "codex test\\n"\n',
+      {
+        mode: 0o700,
+      }
+    );
+    await writeFile(
+      configPath,
+      JSON.stringify({
+        backend: 'codex',
+        backendExecutable: executable,
+        workspacePath,
+        webChatEnabled: false,
+      })
+    );
+    await chmod(configPath, 0o600);
+
+    const options = {
+      homeDir,
+      platform: 'darwin',
+      arch: 'arm64',
+      configPath,
+      checkoutDir: false as const,
+      pathEnv: '/usr/bin:/bin',
+      serviceCheck: async () => ({ name: 'service', level: 'ok' as const, detail: 'running' }),
+      fetchImpl: vi.fn<typeof fetch>().mockResolvedValue(new Response('{}', { status: 200 })),
+    };
+    const checks = await collectDoctorChecks(options);
+    expect(checks).toContainEqual({
+      name: 'backend',
+      level: 'ok',
+      detail: `${executable} is service-ready`,
+    });
+
+    await unlink(executable);
+    const movedChecks = await collectDoctorChecks(options);
+    expect(movedChecks).toContainEqual({
+      name: 'backend',
+      level: 'error',
+      detail: `saved executable ${executable} is unavailable or unsafe; run xangi setup again`,
+    });
+  });
+
   it('reports unsupported platforms without making network requests', async () => {
     Object.defineProperty(process, 'platform', { value: 'freebsd' });
     const fetchImpl = vi.fn<typeof fetch>();

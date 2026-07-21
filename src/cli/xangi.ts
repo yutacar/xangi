@@ -19,6 +19,7 @@ import {
   detectGuidedBackends,
   guidedSetupCmd,
   launcherCommand,
+  readOnboardingStatus,
   writeOnboardingState,
 } from '../setup/guided-onboarding.js';
 import { installCmd } from './install-cmd.js';
@@ -476,10 +477,14 @@ export async function run(argv = process.argv): Promise<void> {
         typeof parsed.flags['web-chat-access'] === 'string'
           ? parsed.flags['web-chat-access']
           : 'local';
+      const onboarding = await readOnboardingStatus(layout);
+      const backendExecutable =
+        onboarding.backend === backend ? onboarding.backendExecutable : undefined;
       console.log(
         await applyGuidedSetup(
           {
             backend,
+            backendExecutable,
             workspacePath,
             workspaceMode,
             webChatAccess,
@@ -489,8 +494,12 @@ export async function run(argv = process.argv): Promise<void> {
             layout,
             initializeTemplate: (selectedLayout) =>
               installConfiguredWorkspaceTemplate(selectedLayout, { reapplyIfEmpty: true }),
-            backendAvailable: async (selected) =>
-              (await detectGuidedBackends()).some((candidate) => candidate.id === selected),
+            backendAvailable: async (selected, executable) =>
+              executable
+                ? (await detectGuidedBackends({ pathEnv: dirname(executable) })).some(
+                    (candidate) => candidate.id === selected && candidate.executable === executable
+                  )
+                : (await detectGuidedBackends()).some((candidate) => candidate.id === selected),
           }
         )
       );
@@ -521,6 +530,7 @@ export async function run(argv = process.argv): Promise<void> {
             schemaVersion: 1,
             phase: 'preflight',
             backend: backend.id,
+            backendExecutable: backend.executable,
             updatedAt: new Date().toISOString(),
           }),
       })

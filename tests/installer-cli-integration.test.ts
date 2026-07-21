@@ -1,12 +1,17 @@
 import { createHash, generateKeyPairSync, sign } from 'node:crypto';
+import { execFileSync } from 'node:child_process';
 import { mkdir, readFile, readlink, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { mkdtemp } from 'node:fs/promises';
 import { afterEach, describe, expect, it } from 'vitest';
 import { installCmd, requireSetupConfiguration } from '../src/cli/install-cmd.js';
-import { updateCmd } from '../src/cli/update-cmd.js';
-import { validateTarListing } from '../src/cli/update-cmd.js';
+import {
+  extractTarGzip,
+  resolveManagedServicePath,
+  updateCmd,
+  validateTarListing,
+} from '../src/cli/update-cmd.js';
 import { resolveAppLayout } from '../src/installer/layout.js';
 import { canonicalManifestPayload, ManifestVerifier } from '../src/installer/manifest.js';
 import type { ServiceAdapter } from '../src/installer/platform/darwin.js';
@@ -96,6 +101,32 @@ function fakeUpdateScheduler(installed = false): UpdateSchedulerAdapter & {
 }
 
 describe('managed installer CLI integration', () => {
+  it.each([
+    ['darwin', 'arm64', '.nvm/versions/node/v22.16.0/bin/codex'],
+    ['linux', 'x64', '.local/bin/codex'],
+  ] as const)(
+    'persists the configured backend directory in the %s managed service PATH',
+    async (platform, arch, relativeExecutable) => {
+      const root = await mkdtemp(join(tmpdir(), `xangi-service-path-${platform}-`));
+      roots.push(root);
+      const layout = resolveAppLayout({ platform, arch, homeDir: root });
+      const executable = join(root, relativeExecutable);
+      await mkdir(layout.configDir, { recursive: true });
+      await writeFile(
+        layout.configFile,
+        JSON.stringify({
+          backend: 'codex',
+          backendExecutable: executable,
+          workspacePath: join(root, 'workspace'),
+          webChatEnabled: true,
+        })
+      );
+      expect(resolveManagedServicePath(layout, root).split(':')[0]).toBe(
+        executable.slice(0, -'/codex'.length)
+      );
+    }
+  );
+
   it('requires AI-guided setup configuration instead of opening a browser fallback', async () => {
     const { layout } = await fixture();
 
@@ -328,6 +359,28 @@ describe('managed installer CLI integration', () => {
         '-rw-r--r-- user/group 1 date bundle/dist/index.js\n-rw-r--r-- user/group 1 date other/file.txt'
       )
     ).toThrow('one top-level');
+  });
+
+  it('streams release listings larger than execFile maxBuffer without weakening validation', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'xangi-large-listing-'));
+    roots.push(root);
+    const source = join(root, 'source');
+    const destination = join(root, 'destination');
+    const longName = `${'a'.repeat(180)}.js`;
+    const archiveEntry = `bundle/dist/${longName}`;
+    const archivePath = join(root, 'large.tar.gz');
+    const listPath = join(root, 'entries.txt');
+    await mkdir(join(source, 'bundle', 'dist'), { recursive: true });
+    await mkdir(destination);
+    await writeFile(join(source, archiveEntry), 'ok\n');
+    await writeFile(listPath, `${`${archiveEntry}\n`.repeat(8_000)}`);
+    execFileSync('tar', ['--hard-dereference', '-czf', archivePath, '-C', source, '-T', listPath]);
+    const listing = execFileSync('tar', ['-tzf', archivePath], { maxBuffer: 8 * 1024 * 1024 });
+    expect(listing.byteLength).toBeGreaterThan(1024 * 1024);
+
+    const artifact = await readFile(archivePath);
+    await expect(extractTarGzip(artifact, destination)).resolves.toBeUndefined();
+    await expect(readFile(join(destination, 'dist', longName), 'utf8')).resolves.toBe('ok\n');
   });
 
   it('keeps a pre-existing service installed when an idempotent install rolls back', async () => {
