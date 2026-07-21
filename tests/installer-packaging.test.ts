@@ -41,6 +41,15 @@ async function createFixture(): Promise<{ project: string; output: string; nodeB
   await mkdir(join(project, 'memory'), { recursive: true });
 
   await writeFile(join(project, 'dist', 'index.js'), 'console.log("xangi")\n');
+  await writeFile(
+    join(project, 'dist', 'approval.js'),
+    `import { readFileSync } from 'node:fs';
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
+const path = join(dirname(fileURLToPath(import.meta.url)), 'approval-patterns.json');
+console.log(JSON.parse(readFileSync(path, 'utf8')).length);
+`
+  );
   await writeFile(join(project, 'dist', '.env'), 'TOKEN=do-not-package\n');
   await writeFile(join(project, 'dist', 'server.pem'), 'private material\n');
   await writeFile(
@@ -195,6 +204,9 @@ describe('packaging/build-bundle.sh', () => {
     await expect(
       readFile(join(unpacked, root, 'runtime', 'bin', 'node'), 'utf8')
     ).resolves.toContain('fixture-node');
+    await expect(
+      exec(process.execPath, [join(unpacked, root, 'dist', 'approval.js')])
+    ).resolves.toMatchObject({ stdout: '1\n' });
   });
 
   it('release targetと一致しないNode runtimeを拒否する', async () => {

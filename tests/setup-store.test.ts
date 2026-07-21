@@ -22,6 +22,21 @@ describe('typed setup config', () => {
     );
   });
 
+  it('accepts only an absolute executable matching the selected backend command', () => {
+    expect(
+      parseSetupConfig({ ...valid, backendExecutable: '/Users/example/.nvm/bin/codex' })
+    ).toMatchObject({ backendExecutable: '/Users/example/.nvm/bin/codex' });
+    expect(() => parseSetupConfig({ ...valid, backendExecutable: 'codex' })).toThrow(
+      SetupValidationError
+    );
+    expect(() => parseSetupConfig({ ...valid, backendExecutable: '/tmp/claude' })).toThrow(
+      SetupValidationError
+    );
+    expect(() =>
+      parseSetupConfig({ ...valid, backendExecutable: '/tmp/codex\nmalicious' })
+    ).toThrow(SetupValidationError);
+  });
+
   it('requires an absolute workspace path and all typed fields', () => {
     expect(() => parseSetupConfig({ ...valid, workspacePath: 'relative/path' })).toThrow(
       SetupValidationError

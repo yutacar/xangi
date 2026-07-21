@@ -1,9 +1,16 @@
 import { describe, it, expect, beforeAll } from 'vitest';
 import {
+  approvalPatternsPath,
   detectDangerousCommand,
   detectDangerousTool,
   setApprovalEnabled,
 } from '../src/approval.js';
+
+it('resolves approval patterns next to the running source or bundle module', () => {
+  expect(approvalPatternsPath('file:///app/current/dist/approval.js')).toBe(
+    '/app/current/dist/approval-patterns.json'
+  );
+});
 
 beforeAll(() => {
   setApprovalEnabled(true);

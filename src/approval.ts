@@ -19,20 +19,20 @@ export interface DangerPattern {
  * approval-patterns.json からパターンを読み込み
  */
 function loadPatternsFromFile(): DangerPattern[] {
-  const paths = [
-    join(dirname(fileURLToPath(import.meta.url)), '..', 'src', 'approval-patterns.json'),
-    join(dirname(fileURLToPath(import.meta.url)), 'approval-patterns.json'),
-  ];
-  for (const filePath of paths) {
-    try {
-      const raw = readFileSync(filePath, 'utf-8');
-      return JSON.parse(raw) as DangerPattern[];
-    } catch {
-      // next path
-    }
+  const filePath = approvalPatternsPath(import.meta.url);
+  try {
+    const raw = readFileSync(filePath, 'utf-8');
+    return JSON.parse(raw) as DangerPattern[];
+  } catch {
+    console.warn(
+      `[approval] Failed to load approval-patterns.json from ${filePath}, using empty patterns`
+    );
+    return [];
   }
-  console.warn('[approval] Failed to load approval-patterns.json, using empty patterns');
-  return [];
+}
+
+export function approvalPatternsPath(moduleUrl: string): string {
+  return join(dirname(fileURLToPath(moduleUrl)), 'approval-patterns.json');
 }
 
 /** 機密ファイルパターン（Write/Edit検知用） */

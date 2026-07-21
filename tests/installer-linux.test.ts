@@ -10,6 +10,8 @@ import {
   type LinuxCommandRunner,
   type SystemdUserServiceOptions,
 } from '../src/installer/platform/linux.js';
+import { managedServicePath } from '../src/installer/service-environment.js';
+import { resolveAppLayout } from '../src/installer/layout.js';
 
 const SETUP_TOKEN = 'A'.repeat(43);
 const SETUP_URL = `http://127.0.0.1:1234/setup?token=${SETUP_TOKEN}`;
@@ -31,6 +33,18 @@ function fixture(root: string, wsl = false): SystemdUserServiceOptions {
 }
 
 describe('renderSystemdUserUnit', () => {
+  it('includes a user-local backend directory in the managed systemd PATH', () => {
+    const homeDir = '/home/tester';
+    const layout = resolveAppLayout({ platform: 'linux', arch: 'x64', homeDir });
+    const executable = `${homeDir}/.local/bin/claude`;
+    const unit = renderSystemdUserUnit({
+      ...fixture('/tmp'),
+      path: managedServicePath(layout, homeDir, executable),
+    });
+    expect(unit).toContain(`PATH=${homeDir}/.local/bin`);
+    expect(unit).toContain('/usr/local/bin:/usr/bin:/bin');
+  });
+
   it('renders quoted paths, restart behavior, and an explicit PATH', () => {
     const unit = renderSystemdUserUnit(fixture('/home/test'));
     expect(unit).toContain(

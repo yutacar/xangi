@@ -1,4 +1,5 @@
 import { isAbsolute } from 'node:path';
+import { isValidBackendExecutablePath } from './backend-executable.js';
 
 export const SETUP_BACKENDS = [
   'claude-code',
@@ -16,6 +17,7 @@ export type SetupWebChatAccess = (typeof SETUP_WEB_CHAT_ACCESS)[number];
 
 export interface SetupConfig {
   backend: SetupBackend;
+  backendExecutable?: string;
   workspacePath: string;
   webChatEnabled: boolean;
   webChatAccess: SetupWebChatAccess;
@@ -24,6 +26,7 @@ export interface SetupConfig {
 
 const ALLOWED_KEYS = new Set<string>([
   'backend',
+  'backendExecutable',
   'workspacePath',
   'webChatEnabled',
   'webChatAccess',
@@ -53,6 +56,7 @@ export function parseSetupConfig(value: unknown): SetupConfig {
 
   const {
     backend,
+    backendExecutable,
     workspacePath,
     webChatEnabled,
     webChatAccess = 'local',
@@ -74,8 +78,17 @@ export function parseSetupConfig(value: unknown): SetupConfig {
     throw new SetupValidationError();
   }
 
+  if (
+    backendExecutable !== undefined &&
+    (typeof backendExecutable !== 'string' ||
+      !isValidBackendExecutablePath(backend as SetupBackend, backendExecutable))
+  ) {
+    throw new SetupValidationError();
+  }
+
   return {
     backend: backend as SetupBackend,
+    ...(backendExecutable === undefined ? {} : { backendExecutable }),
     workspacePath,
     webChatEnabled,
     webChatAccess: webChatAccess as SetupWebChatAccess,
