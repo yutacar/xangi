@@ -1,6 +1,187 @@
 const START = '<xangi_reply_suggestions>';
 const END = '</xangi_reply_suggestions>';
 
+interface ReplySuggestionBlock {
+  start: number;
+  end: number;
+  raw: string | null;
+}
+
+interface ReplySuggestionCloser {
+  closeIndex: number;
+  blockEnd: number;
+}
+
+function lineStartAt(output: string, index: number): number {
+  return output.lastIndexOf('\n', index - 1) + 1;
+}
+
+function isStandaloneMarker(output: string, index: number): boolean {
+  return output.slice(lineStartAt(output, index), index).trim() === '';
+}
+
+function skipWhitespace(output: string, index: number): number {
+  let next = index;
+  while (next < output.length && /\s/.test(output[next])) next++;
+  return next;
+}
+
+/** JSON文字列内の `]` を無視して、ルート配列の終端直後を返す。 */
+function findJsonArrayEnd(output: string, start: number): number | null {
+  if (output[start] !== '[') return null;
+  let depth = 0;
+  let inString = false;
+  let escaped = false;
+  for (let index = start; index < output.length; index++) {
+    const char = output[index];
+    if (inString) {
+      if (escaped) {
+        escaped = false;
+      } else if (char === '\\') {
+        escaped = true;
+      } else if (char === '"') {
+        inString = false;
+      }
+      continue;
+    }
+    if (char === '"') {
+      inString = true;
+    } else if (char === '[') {
+      depth++;
+    } else if (char === ']') {
+      depth--;
+      if (depth === 0) return index + 1;
+    }
+  }
+  return null;
+}
+
+/** 終了タグから行末までが空白だけなら、次の行の先頭位置を返す。 */
+function standaloneBlockEnd(output: string, index: number): number | null {
+  const newlineIndex = output.indexOf('\n', index);
+  const lineEnd = newlineIndex < 0 ? output.length : newlineIndex;
+  if (output.slice(index, lineEnd).trim() !== '') return null;
+  return newlineIndex < 0 ? output.length : newlineIndex + 1;
+}
+
+function findStandaloneClosers(output: string): ReplySuggestionCloser[] {
+  const closers: ReplySuggestionCloser[] = [];
+  let searchFrom = 0;
+  for (;;) {
+    const closeIndex = output.indexOf(END, searchFrom);
+    if (closeIndex < 0) return closers;
+    const blockEnd = standaloneBlockEnd(output, closeIndex + END.length);
+    if (blockEnd !== null) closers.push({ closeIndex, blockEnd });
+    searchFrom = closeIndex + END.length;
+  }
+}
+
+function findStandaloneMarkers(output: string): number[] {
+  const markers: number[] = [];
+  let searchFrom = 0;
+  for (;;) {
+    const markerIndex = output.indexOf(START, searchFrom);
+    if (markerIndex < 0) return markers;
+    if (isStandaloneMarker(output, markerIndex)) markers.push(markerIndex);
+    searchFrom = markerIndex + START.length;
+  }
+}
+
+/** 独立行を占める完全ブロックと、ストリーミング中の未完ブロックを抽出する。 */
+function findInternalBlocks(output: string): ReplySuggestionBlock[] {
+  const blocks: ReplySuggestionBlock[] = [];
+  const markers = findStandaloneMarkers(output);
+  const closers = findStandaloneClosers(output);
+  let markerNumber = 0;
+  let closerNumber = 0;
+  while (markerNumber < markers.length) {
+    const markerIndex = markers[markerNumber];
+    const nextMarkerIndex = markers[markerNumber + 1] ?? output.length;
+
+    const markerContentStart = markerIndex + START.length;
+    const markerNewline = output.indexOf('\n', markerContentStart);
+    const markerLineEnd = markerNewline < 0 ? output.length : markerNewline;
+    const markerLineTail = output.slice(markerContentStart, markerLineEnd);
+    const payloadStart = skipWhitespace(output, markerContentStart);
+    const startsJsonArray = output[payloadStart] === '[';
+    const jsonArrayEnd = startsJsonArray ? findJsonArrayEnd(output, payloadStart) : null;
+    const isInternalCandidate = startsJsonArray || markerLineTail.trim() === '';
+
+    if (startsJsonArray) {
+      const jsonEnd = jsonArrayEnd;
+      const closeIndex = jsonEnd === null ? -1 : skipWhitespace(output, jsonEnd);
+      if (jsonEnd !== null && output.startsWith(END, closeIndex)) {
+        const blockEnd = standaloneBlockEnd(output, closeIndex + END.length);
+        if (blockEnd !== null) {
+          blocks.push({
+            start: lineStartAt(output, markerIndex),
+            end: blockEnd,
+            raw: output.slice(payloadStart, jsonEnd),
+          });
+          markerNumber++;
+          while (markerNumber < markers.length && markers[markerNumber] < blockEnd) markerNumber++;
+          continue;
+        }
+        // 終了タグ後に同じ行の文章が続く場合は、本文中の引用として保持する。
+        markerNumber++;
+        continue;
+      }
+    }
+
+    while (closerNumber < closers.length && closers[closerNumber].closeIndex < markerContentStart)
+      closerNumber++;
+    let nextCloserNumber = closerNumber;
+    let fallback: ReplySuggestionCloser | null = null;
+    while (
+      nextCloserNumber < closers.length &&
+      closers[nextCloserNumber].closeIndex < nextMarkerIndex
+    ) {
+      fallback = closers[nextCloserNumber];
+      nextCloserNumber++;
+    }
+    closerNumber = nextCloserNumber;
+
+    // 壊れたブロックは次の開始タグを越えず、範囲内の最後の独立終了タグまで隠す。
+    if (fallback !== null) {
+      blocks.push({
+        start: lineStartAt(output, markerIndex),
+        end: fallback.blockEnd,
+        raw: null,
+      });
+      markerNumber++;
+      while (markerNumber < markers.length && markers[markerNumber] < fallback.blockEnd)
+        markerNumber++;
+      continue;
+    }
+
+    if (jsonArrayEnd !== null) {
+      // 終了タグが未到着・途中・壊れている場合も、独立行で始まった候補は隠す。
+      blocks.push({ start: lineStartAt(output, markerIndex), end: output.length, raw: null });
+      break;
+    }
+
+    if (isInternalCandidate && (!startsJsonArray || jsonArrayEnd === null)) {
+      // 配列が未完、または開始タグだけの行なら、最初の未完ブロック以降を隠す。
+      blocks.push({ start: lineStartAt(output, markerIndex), end: output.length, raw: null });
+      break;
+    }
+
+    // JSON配列の例やタグの説明として完結している本文は保持する。
+    markerNumber++;
+  }
+  return blocks;
+}
+
+function removeBlocks(output: string, blocks: ReplySuggestionBlock[]): string {
+  let cursor = 0;
+  let result = '';
+  for (const block of blocks) {
+    result += output.slice(cursor, block.start);
+    cursor = block.end;
+  }
+  return result + output.slice(cursor);
+}
+
 export function appendReplySuggestionInstruction(prompt: string, count = 3): string {
   const example = Array.from({ length: count }, (_, index) => `候補${index + 1}`);
   return `${prompt}\n\n[system-context]\n通常の回答に続けて、ユーザーが次に送りそうな短い返信候補を${count}件生成してください。出力の末尾に次の形式を厳密に付け、通常の回答本文では候補に言及しないでください。候補はユーザー視点の自然な日本語にしてください。\n${START}${JSON.stringify(example)}${END}`;
@@ -13,25 +194,24 @@ export function extractReplySuggestions(
   text: string;
   suggestions: string[];
 } {
-  const pattern = new RegExp(`${START}([\\s\\S]*?)${END}`, 'g');
+  const blocks = findInternalBlocks(output);
   let suggestions: string[] = [];
-  const text = output
-    .replace(pattern, (_match, raw: string) => {
-      try {
-        const parsed = JSON.parse(raw.trim());
-        if (Array.isArray(parsed)) {
-          suggestions = parsed
-            .filter((item): item is string => typeof item === 'string')
-            .map((item) => item.trim().replace(/\s+/g, ' '))
-            .filter(Boolean)
-            .slice(0, count);
-        }
-      } catch {
-        // 壊れた候補ブロックはユーザーへ見せず、候補なしとして扱う。
+  for (const block of blocks) {
+    if (block.raw === null) continue;
+    try {
+      const parsed = JSON.parse(block.raw);
+      if (Array.isArray(parsed)) {
+        suggestions = parsed
+          .filter((item): item is string => typeof item === 'string')
+          .map((item) => item.trim().replace(/\s+/g, ' '))
+          .filter(Boolean)
+          .slice(0, count);
       }
-      return '';
-    })
-    .trimEnd();
+    } catch {
+      // 壊れた候補ブロックはユーザーへ見せず、候補なしとして扱う。
+    }
+  }
+  const text = removeBlocks(output, blocks).trimEnd();
   return { text: stripReplySuggestionMarkup(text), suggestions };
 }
 
@@ -52,48 +232,22 @@ export function sanitizeReplySuggestionOutput(
 // 開始タグの断片を隠すときの最小一致長。これ未満（`<` 単体など）は本文として扱う。
 const MARKER_PREFIX = '<xangi_';
 
-/**
- * 末尾に張り付いた内部候補ブロックだけを表示テキストから隠す。対象は
- * (0) `<開始>…</終了>` の完全ブロック、(1) 閉じタグを伴わない未完ブロック、
- * (2) ストリーミングで途中まで打ち込まれた開始タグの前方一致断片、の 3 種。
- *
- * 以前は最初の開始タグ出現位置以降を無条件に切り捨てていたため、本文がマーカー名に
- * 言及しただけで以降が丸ごと消えていた（長さ非依存・内容依存の途中切れ）。ここでは
- * 末尾に接しているかを見て、本文中の引用は切らない。
- */
+/** 独立行の完全・未完ブロックだけを隠し、本文中のインライン引用は保持する。 */
 export function stripReplySuggestionMarkup(output: string): string {
-  let end = output.length;
-  for (;;) {
-    const slice = output.slice(0, end);
-    let next = end;
-    const openIndex = slice.lastIndexOf(START);
-    if (openIndex >= 0) {
-      const closeIndex = slice.indexOf(END, openIndex);
-      if (closeIndex >= 0) {
-        // (0) 完全ブロック。末尾に接している（後続が空白のみ）ときだけ隠す。
-        if (slice.slice(closeIndex + END.length).trim() === '') {
-          next = Math.min(next, openIndex);
-        }
-      } else {
-        // (1) 未完ブロック。開始タグ直後が本物のブロック内容（JSON 配列）か、
-        //     末尾でタグのみのときだけ隠す。
-        const tail = slice.slice(openIndex + START.length).trimStart();
-        if (tail === '' || tail.startsWith('[')) {
-          next = Math.min(next, openIndex);
-        }
-      }
+  let visible = removeBlocks(output, findInternalBlocks(output));
+
+  // 開始タグが途中まで届いた時点でも、十分長い独立行の断片だけを隠す。
+  const trailingWhitespaceStart = visible.search(/\s*$/);
+  const contentEnd = trailingWhitespaceStart < 0 ? visible.length : trailingWhitespaceStart;
+  for (let len = START.length - 1; len >= MARKER_PREFIX.length; len--) {
+    if (!visible.slice(0, contentEnd).endsWith(START.slice(0, len))) continue;
+    const fragmentIndex = contentEnd - len;
+    if (isStandaloneMarker(visible, fragmentIndex)) {
+      visible = visible.slice(0, lineStartAt(visible, fragmentIndex));
     }
-    // (2) 末尾に途中まで打ち込まれた開始タグの前方一致断片（例: 末尾が "<xangi_reply"）。
-    for (let len = START.length - 1; len >= MARKER_PREFIX.length; len--) {
-      if (slice.endsWith(START.slice(0, len))) {
-        next = Math.min(next, end - len);
-        break;
-      }
-    }
-    if (next >= end) break;
-    end = next;
+    break;
   }
-  return output.slice(0, end).trimEnd();
+  return visible.trimEnd();
 }
 
 export function formatNumberedSuggestions(suggestions: string[]): string {
