@@ -79,6 +79,10 @@ describe('Linux update systemd timer', () => {
     const timer = renderSystemdUpdateTimer(options);
     expect(service).toContain('Type=oneshot');
     expect(service).toContain(' update');
+    expect(service).toContain(
+      'WorkingDirectory=/home/Test\\x20User/.local/share/xangi/app/current'
+    );
+    expect(service).not.toContain('WorkingDirectory="');
     expect(timer).toContain('OnUnitActiveSec=7200s');
     expect(timer).toContain('Persistent=true');
     expect(timer).toContain('Unit=xangi-update.service');

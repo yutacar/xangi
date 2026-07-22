@@ -2,6 +2,7 @@ import { spawnSync } from 'node:child_process';
 import { chmodSync, mkdirSync, renameSync, rmSync, writeFileSync } from 'node:fs';
 import { dirname } from 'node:path';
 import type { UpdateSchedulerAdapter, UpdateSchedulerStatus } from './update-scheduler.js';
+import { systemdPathValue } from './linux.js';
 
 export interface SystemdUpdateSchedulerOptions {
   serviceName: string;
@@ -50,7 +51,7 @@ export function renderSystemdUpdateService(options: SystemdUpdateSchedulerOption
     '[Service]',
     'Type=oneshot',
     `ExecStart=${systemdValue(options.launcherPath)} update`,
-    `WorkingDirectory=${systemdValue(options.workingDirectory)}`,
+    `WorkingDirectory=${systemdPathValue(options.workingDirectory)}`,
     '',
   ].join('\n');
 }

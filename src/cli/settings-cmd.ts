@@ -16,6 +16,12 @@ interface SecretField {
 
 export const SECRET_FIELDS: readonly SecretField[] = [
   { name: 'DISCORD_TOKEN', label: 'Botトークン', group: 'Discord' },
+  {
+    name: 'DISCORD_ALLOWED_USER',
+    label: '許可ユーザーID（カンマ区切り、全員許可は *）',
+    group: 'Discord',
+    type: 'text',
+  },
   { name: 'SLACK_BOT_TOKEN', label: 'Botトークン (xoxb-…)', group: 'Slack' },
   { name: 'SLACK_APP_TOKEN', label: 'Appトークン (xapp-…)', group: 'Slack' },
   { name: 'LINE_CHANNEL_ACCESS_TOKEN', label: 'Channel access token', group: 'LINE' },
@@ -111,7 +117,7 @@ export async function startSecretSettingsServer(
       const updates: Record<string, string> = {};
       for (const field of SECRET_FIELDS) {
         const value = body.get(field.name)?.trim();
-        if (value) updates[field.name] = value;
+        if (value) updates[field.name] = validateSettingValue(field.name, value);
       }
       await options.store.setMany(updates);
       response.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
@@ -231,7 +237,16 @@ function renderSettingsPage(configured: Set<string>, accessToken: string): strin
 }
 
 function renderSavedPage(count: number): string {
-  return `<!doctype html><html lang="ja"><meta charset="utf-8"><meta name="viewport" content="width=device-width"><title>保存完了</title><style>${styles()}</style><main><h1>保存しました</h1><p>${count}件のトークンを保存しました。このタブは閉じて構いません。</p></main></html>`;
+  return `<!doctype html><html lang="ja"><meta charset="utf-8"><meta name="viewport" content="width=device-width"><title>保存完了</title><style>${styles()}</style><main><h1>保存しました</h1><p>${count}件の接続設定を保存しました。このタブは閉じて構いません。</p></main></html>`;
+}
+
+function validateSettingValue(name: string, value: string): string {
+  if (name !== 'DISCORD_ALLOWED_USER') return value;
+  const users = value.split(',').map((user) => user.trim());
+  if (users.some((user) => !/^\d{1,20}$/.test(user)) && !(users.length === 1 && users[0] === '*')) {
+    throw new Error('Discord許可ユーザーIDは数字をカンマ区切りで入力してください');
+  }
+  return users.join(',');
 }
 
 function styles(): string {
