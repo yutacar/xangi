@@ -48,6 +48,21 @@ function systemdValue(value: string): string {
   return `"${value.replaceAll('\\', '\\\\').replaceAll('"', '\\"').replaceAll('%', '%%')}"`;
 }
 
+export function systemdPathValue(value: string): string {
+  if (!value.startsWith('/')) {
+    throw new Error('systemd working directory must be an absolute path');
+  }
+  if ([...value].some((character) => character.charCodeAt(0) < 32)) {
+    throw new Error('systemd unit values may not contain control characters');
+  }
+  return value
+    .replaceAll('\\', '\\\\')
+    .replaceAll(' ', '\\x20')
+    .replaceAll('"', '\\x22')
+    .replaceAll("'", '\\x27')
+    .replaceAll('%', '%%');
+}
+
 export function renderSystemdUserUnit(options: SystemdUserServiceOptions): string {
   if (!/^[A-Za-z0-9_.@-]+\.service$/.test(options.unitName)) {
     throw new Error(`Invalid systemd unit name: ${options.unitName}`);
@@ -70,7 +85,7 @@ export function renderSystemdUserUnit(options: SystemdUserServiceOptions): strin
     '[Service]',
     'Type=simple',
     `ExecStart=${args}`,
-    `WorkingDirectory=${systemdValue(options.workingDirectory)}`,
+    `WorkingDirectory=${systemdPathValue(options.workingDirectory)}`,
     `Environment=${systemdValue(`PATH=${options.path}`)}`,
     'Restart=always',
     'RestartSec=5',

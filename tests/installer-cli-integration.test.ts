@@ -106,7 +106,7 @@ function fakeUpdateScheduler(installed = false): UpdateSchedulerAdapter & {
 describe('managed installer CLI integration', () => {
   it.each([
     ['darwin', 'arm64', '.nvm/versions/node/v22.16.0/bin/codex'],
-    ['linux', 'x64', '.local/bin/codex'],
+    ['linux', 'x64', '.nvm/versions/node/v24.18.0/bin/codex'],
   ] as const)(
     'persists the configured backend directory in the %s managed service PATH',
     async (platform, arch, relativeExecutable) => {

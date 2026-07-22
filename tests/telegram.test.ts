@@ -1,4 +1,7 @@
 import { describe, it, expect, vi } from 'vitest';
+import { existsSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import {
   buildPromptWithContext,
   buildTelegramWebhookUrl,
@@ -16,6 +19,7 @@ import {
   retryTelegramOperation,
   shouldProcessMessage,
   shouldStreamTelegramResponse,
+  stopTelegramWork,
   TelegramBotLoopGuard,
   TelegramChatQueue,
   telegramMediaDownloadContext,
@@ -84,6 +88,60 @@ describe('Telegram chat queue generation boundaries', () => {
       'second-agent-started',
     ]);
     expect(events).not.toContain('first-agent-started');
+  });
+
+  it('drops media preprocessing after stop invalidates the queued generation', async () => {
+    const queue = new TelegramChatQueue();
+    const contextKey = 'telegram:dm:222';
+    const queuedGeneration = queue.getGeneration(contextKey);
+    let releaseDownload!: () => void;
+    let markDownloadStarted!: () => void;
+    const downloadStarted = new Promise<void>((resolve) => {
+      markDownloadStarted = resolve;
+    });
+    const downloadGate = new Promise<void>((resolve) => {
+      releaseDownload = resolve;
+    });
+    const agent = vi.fn();
+    const cancel = vi.fn();
+    const tempDir = mkdtempSync(join(tmpdir(), 'xangi-telegram-stop-'));
+    const downloadedPath = join(tempDir, 'stopped.pdf');
+
+    try {
+      const task = queue.enqueue(contextKey, async () => {
+        const batch = await downloadTelegramMediaBatch(
+          [
+            {
+              fileId: 'slow-file',
+              fileUniqueId: 'slow-file-u',
+              kind: 'document',
+              mimeType: 'application/pdf',
+            },
+          ],
+          async () => {
+            markDownloadStarted();
+            await downloadGate;
+            writeFileSync(downloadedPath, 'downloaded after stop');
+            return downloadedPath;
+          },
+          () => queue.getGeneration(contextKey) === queuedGeneration
+        );
+        if (!batch.stale) agent();
+        return batch;
+      });
+
+      await downloadStarted;
+      stopTelegramWork(queue, contextKey, { cancel });
+      releaseDownload();
+
+      await expect(task).resolves.toMatchObject({ stale: true, attachmentPaths: [] });
+      expect(queue.getInterruptionReason(contextKey, queuedGeneration)).toBe('stop');
+      expect(cancel).toHaveBeenCalledWith(contextKey);
+      expect(agent).not.toHaveBeenCalled();
+      expect(existsSync(downloadedPath)).toBe(false);
+    } finally {
+      rmSync(tempDir, { recursive: true, force: true });
+    }
   });
 });
 

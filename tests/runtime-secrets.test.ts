@@ -18,6 +18,7 @@ describe('loadStoredSecrets', () => {
     const configHome = join(root, 'config');
     await new SecretStore(join(configHome, 'xangi', 'secrets.json')).setMany({
       DISCORD_TOKEN: 'stored-discord',
+      DISCORD_ALLOWED_USER: '123456789012345678',
       XANGI_NOTION_TOKEN: 'stored-notion',
     });
     const env: NodeJS.ProcessEnv = {
@@ -28,9 +29,10 @@ describe('loadStoredSecrets', () => {
     };
 
     expect(await loadStoredSecrets({ env, platform: 'linux', arch: 'x64', homeDir: root })).toEqual(
-      ['XANGI_NOTION_TOKEN']
+      ['DISCORD_ALLOWED_USER', 'XANGI_NOTION_TOKEN']
     );
     expect(env.DISCORD_TOKEN).toBe('explicit-discord');
+    expect(env.DISCORD_ALLOWED_USER).toBe('123456789012345678');
     expect(env.XANGI_NOTION_TOKEN).toBe('stored-notion');
   });
 });

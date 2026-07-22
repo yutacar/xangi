@@ -47,15 +47,18 @@ describe('standalone AI coding tool setup', () => {
     expect(result.stdout).toContain('cursor         not installed');
   });
 
-  it('does not hide the Node.js and npm prerequisite for Codex', async () => {
+  it('guides Codex users through nvm setup before installing Node.js', async () => {
     const data = await fixture();
-    await expect(
-      exec('/bin/bash', ['packaging/setup-ai-tools.sh', 'codex'], {
-        env: { HOME: data.home, PATH: data.bin },
-      })
-    ).rejects.toMatchObject({
-      stderr: expect.stringContaining('Codexの導入にはNode.jsとnpmが必要です'),
-    });
+    const error = await exec('/bin/bash', ['packaging/setup-ai-tools.sh', 'codex'], {
+      env: { HOME: data.home, PATH: data.bin },
+    }).catch((cause: unknown) => cause as { stderr: string });
+    expect(error.stderr).toContain('Codexの導入にはNode.jsとnpmが必要です');
+    expect(error.stderr).toContain(
+      'curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.40.4/install.sh | bash'
+    );
+    expect(error.stderr).toContain('現在のTerminalを閉じて、新しいTerminalを開きます');
+    expect(error.stderr).toContain('command -v nvm\n   nvm install --lts');
+    expect(error.stderr).toContain('https://github.com/nvm-sh/nvm');
   });
 
   it('does not reinstall or relogin an already ready tool', async () => {

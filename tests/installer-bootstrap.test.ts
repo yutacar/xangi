@@ -112,7 +112,7 @@ async function buildInstaller(data: Awaited<ReturnType<typeof fixture>>) {
 
 async function fakeHostCommands(root: string, platform: 'darwin' | 'linux') {
   const bin = join(root, 'fake-bin');
-  await mkdir(bin);
+  await mkdir(bin, { recursive: true });
   await writeFile(
     join(bin, 'uname'),
     `#!/bin/sh\n[ "\${1:-}" = -s ] && echo ${platform === 'darwin' ? 'Darwin' : 'Linux'} || echo "\${FIXTURE_MACHINE:-arm64}"\n`
@@ -187,7 +187,7 @@ describe('authenticated macOS bootstrap installer', () => {
   it('検証済みbundleだけを展開してversion/current/launcherを作る', async () => {
     const data = await fixture();
     const installer = await buildInstaller(data);
-    const result = await runInstaller(installer, data);
+    const result = await runInstaller(installer, data, { SHELL: '/bin/zsh' });
 
     const app = join(data.root, 'home', 'Library', 'Application Support', 'xangi', 'app');
     await expect(
@@ -232,6 +232,9 @@ describe('authenticated macOS bootstrap installer', () => {
     expect(result.stdout).toContain(' doctor');
     expect(result.stdout).toContain('Token settings: "');
     expect(result.stdout).toContain(' settings');
+    await expect(readFile(join(data.root, 'home', '.zshrc'), 'utf8')).resolves.toContain(
+      'export PATH="$HOME/.local/bin:$PATH"'
+    );
   });
 
   it('refuses to overwrite an unrelated command at ~/.local/bin/xangi', async () => {
@@ -258,17 +261,38 @@ describe('authenticated macOS bootstrap installer', () => {
   it('installs a Linux bundle into XDG paths without Git or Node', async () => {
     const data = await fixture('linux');
     const installer = await buildInstaller(data);
-    await runInstaller(installer, data, {
+    const linuxEnv = {
       FIXTURE_MACHINE: 'aarch64',
+      SHELL: '/bin/bash',
       XDG_DATA_HOME: join(data.root, 'home', '.local', 'share'),
       XDG_CONFIG_HOME: join(data.root, 'home', '.config'),
       XDG_STATE_HOME: join(data.root, 'home', '.local', 'state'),
-    });
+    };
+    const result = await runInstaller(installer, data, linuxEnv);
 
     const app = join(data.root, 'home', '.local', 'share', 'xangi', 'app');
     await expect(
       readFile(join(app, 'versions', '1.2.3', 'dist', 'cli', 'xangi-main.js'), 'utf8')
     ).resolves.toContain('fixture');
+    await expect(readFile(join(data.root, 'home', '.profile'), 'utf8')).resolves.toContain(
+      'export PATH="$HOME/.local/bin:$PATH"'
+    );
+    await expect(readFile(join(data.root, 'home', '.bashrc'), 'utf8')).resolves.toContain(
+      'export PATH="$HOME/.local/bin:$PATH"'
+    );
+    expect(result.stdout).toContain(
+      'The installer added ~/.local/bin to your shell startup files'
+    );
+    const shellResult = await exec('bash', ['-c', '. "$HOME/.bashrc"; command -v xangi'], {
+      env: { HOME: join(data.root, 'home'), PATH: '/usr/bin:/bin' },
+    });
+    expect(shellResult.stdout.trim()).toBe(join(data.root, 'home', '.local', 'bin', 'xangi'));
+
+    await runInstaller(installer, data, linuxEnv);
+    const profile = await readFile(join(data.root, 'home', '.profile'), 'utf8');
+    const bashrc = await readFile(join(data.root, 'home', '.bashrc'), 'utf8');
+    expect(profile.match(/# xangi: add user commands to PATH/g)).toHaveLength(1);
+    expect(bashrc.match(/# xangi: add user commands to PATH/g)).toHaveLength(1);
     await expect(readFile(join(app, 'bin', 'xangi'), 'utf8')).resolves.toContain('XDG_DATA_HOME');
     await expect(
       readFile(join(data.root, 'home', '.config', 'xangi', 'release.json'), 'utf8')

@@ -185,6 +185,8 @@ Files are downloaded only after the sender, chat allowlists, and group trigger r
 
 When the agent returns an image, MP4 video, or another file as an attachment, xangi sends it as a Telegram photo, video, or document. A failed attachment is not retried because Telegram may already have accepted the upload and retrying could create duplicates. For multiple attachments, xangi still attempts later unsent files and reports how many results could not be confirmed.
 
+If you send `/stop` while media is downloading or waiting in the per-chat queue, xangi invalidates that work, discards files it already downloaded, and does not start the agent. The conversation session itself remains active.
+
 Videos are currently passed directly to the agent. No keyframe extraction or audio transcription is performed, so the selected agent backend must support video input.
 
 ## 10. Telegram API connection timeouts

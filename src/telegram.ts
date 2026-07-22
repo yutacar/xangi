@@ -311,13 +311,29 @@ const botLoopGuard = new TelegramBotLoopGuard();
 export class TelegramChatQueue {
   private readonly queues = new Map<string, Promise<void>>();
   private readonly generations = new Map<string, number>();
+  private readonly interruptionReasons = new Map<
+    string,
+    { generation: number; reason: 'reset' | 'stop' }
+  >();
 
   getGeneration(contextKey: string): number {
     return this.generations.get(contextKey) ?? 0;
   }
 
-  nextGeneration(contextKey: string): void {
-    this.generations.set(contextKey, this.getGeneration(contextKey) + 1);
+  nextGeneration(contextKey: string, reason: 'reset' | 'stop' = 'reset'): void {
+    const generation = this.getGeneration(contextKey) + 1;
+    this.generations.set(contextKey, generation);
+    this.interruptionReasons.set(contextKey, { generation, reason });
+  }
+
+  getInterruptionReason(
+    contextKey: string,
+    queuedGeneration: number
+  ): 'reset' | 'stop' | undefined {
+    const currentGeneration = this.getGeneration(contextKey);
+    if (currentGeneration === queuedGeneration) return undefined;
+    const interruption = this.interruptionReasons.get(contextKey);
+    return interruption?.generation === currentGeneration ? interruption.reason : 'reset';
   }
 
   enqueue<T = void>(contextKey: string, task: () => Promise<T>): Promise<T> {
@@ -345,15 +361,31 @@ export class TelegramChatQueue {
   }
 }
 
-// /stop・/new 等のコマンドはキューを経由せず、generationだけを進める。
+// /stop・/new 等のコマンドはキューを経由せず、generationを進めて旧タスクを無効化する。
 const telegramChatQueue = new TelegramChatQueue();
 
 function getGeneration(contextKey: string): number {
   return telegramChatQueue.getGeneration(contextKey);
 }
 
-function nextGeneration(contextKey: string): void {
-  telegramChatQueue.nextGeneration(contextKey);
+function nextGeneration(contextKey: string, reason: 'reset' | 'stop' = 'reset'): void {
+  telegramChatQueue.nextGeneration(contextKey, reason);
+}
+
+function getInterruptionReason(
+  contextKey: string,
+  queuedGeneration: number
+): 'reset' | 'stop' | undefined {
+  return telegramChatQueue.getInterruptionReason(contextKey, queuedGeneration);
+}
+
+export function stopTelegramWork(
+  queue: TelegramChatQueue,
+  contextKey: string,
+  agentRunner: Pick<AgentRunner, 'cancel'>
+): void {
+  queue.nextGeneration(contextKey, 'stop');
+  agentRunner.cancel?.(contextKey);
 }
 
 function resetTelegramSession(
@@ -972,7 +1004,7 @@ export async function startTelegramBot(opts: {
 
     // 停止コマンド (キューを経由せず即時キャンセル)
     if (rawCmd === '/stop') {
-      agentRunner.cancel?.(contextKey);
+      stopTelegramWork(telegramChatQueue, contextKey, agentRunner);
       await ctx.reply('実行を停止しました。').catch((err) => {
         console.warn(`[xangi-telegram] Failed to send stop reply: ${formatTelegramError(err)}`);
       });
@@ -1020,17 +1052,18 @@ export async function startTelegramBot(opts: {
     }
 
     let currentGen = options.queuedGeneration!;
-    const notifyResetBeforeStart = async () => {
+    const notifyInterruptedBeforeStart = async () => {
+      if (getInterruptionReason(contextKey, currentGen) === 'stop') return;
       await ctx
         .reply('セッションがリセットされたため、このメッセージの処理を中断しました。')
         .catch((error) => {
           console.warn(
-            `[xangi-telegram] Failed to send session reset notice: ${formatTelegramError(error)}`
+            `[xangi-telegram] Failed to send interruption notice: ${formatTelegramError(error)}`
           );
         });
     };
     if (getGeneration(contextKey) !== currentGen) {
-      await notifyResetBeforeStart();
+      await notifyInterruptedBeforeStart();
       return;
     }
 
@@ -1047,7 +1080,7 @@ export async function startTelegramBot(opts: {
       () => getGeneration(contextKey) === currentGen
     );
     if (mediaBatch.stale) {
-      await notifyResetBeforeStart();
+      await notifyInterruptedBeforeStart();
       return;
     }
     const { attachmentPaths, mediaErrors } = mediaBatch;
@@ -1068,7 +1101,7 @@ export async function startTelegramBot(opts: {
       });
       if (getGeneration(contextKey) !== currentGen) {
         discardTelegramMediaFiles(attachmentPaths);
-        await notifyResetBeforeStart();
+        await notifyInterruptedBeforeStart();
         return;
       }
     }
@@ -1157,22 +1190,22 @@ export async function startTelegramBot(opts: {
       });
     }
 
-    const markSessionReset = async () => {
+    const markInterrupted = async () => {
       if (!capturedReplyMsg) return;
+      const messageText =
+        getInterruptionReason(contextKey, currentGen) === 'stop'
+          ? '処理を停止しました。'
+          : 'セッションがリセットされました。';
       await ctx.api
-        .editMessageText(
-          capturedReplyMsg.chat.id,
-          capturedReplyMsg.message_id,
-          'セッションがリセットされました。'
-        )
+        .editMessageText(capturedReplyMsg.chat.id, capturedReplyMsg.message_id, messageText)
         .catch(() => {});
     };
 
     try {
-      // セッションリセット後の旧世代タスクをスキップ
+      // /stop やセッションリセット後の旧世代タスクをスキップ
       if (getGeneration(contextKey) !== currentGen) {
         discardTelegramMediaFiles(attachmentPaths);
-        await markSessionReset();
+        await markInterrupted();
         return;
       }
 
@@ -1248,10 +1281,10 @@ export async function startTelegramBot(opts: {
         finishStreamSession();
       }
 
-      // 実行中に /new や idle reset が入った場合、旧結果を投稿しない
+      // 実行中に /stop、/new、idle reset が入った場合、旧結果を投稿しない
       if (getGeneration(contextKey) !== currentGen) {
         discardTelegramMediaFiles(attachmentPaths);
-        await markSessionReset();
+        await markInterrupted();
         return;
       }
 
