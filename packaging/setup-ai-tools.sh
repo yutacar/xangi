@@ -25,6 +25,32 @@ fail() {
   exit 1
 }
 
+show_codex_node_guide() {
+  printf '%s\n' \
+    'Codexの導入にはNode.jsとnpmが必要です。' \
+    '' \
+    'nvmを使う場合は、次の順番で準備してください。' \
+    '' \
+    '1. nvmをインストールします。' \
+    '   curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.40.4/install.sh | bash' \
+    '' \
+    '2. 重要: 現在のTerminalを閉じて、新しいTerminalを開きます。' \
+    '   新しいshellでnvmの設定を読み込むため、この手順を挟んでから先へ進んでください。' \
+    '' \
+    '3. nvmを確認し、LTS版のNode.jsをインストールします。' \
+    '   command -v nvm' \
+    '   nvm install --lts' \
+    '   node --version' \
+    '   npm --version' \
+    '' \
+    '4. 新しいTerminalでCodexのセットアップを再実行します。' \
+    '   bash <(curl -fsSL https://github.com/karaage0703/xangi/releases/latest/download/setup-ai-tools.sh) codex' \
+    '' \
+    '参考:' \
+    '  https://github.com/nvm-sh/nvm' >&2
+  exit 1
+}
+
 refresh_path() {
   export PATH="$HOME/.local/bin:$HOME/.cursor/bin:$PATH"
   hash -r 2>/dev/null || true
@@ -100,7 +126,7 @@ download_and_run() {
 install_tool() {
   case "$1" in
     codex)
-      command -v npm >/dev/null 2>&1 || fail 'Codexの導入にはNode.jsとnpmが必要です: https://nodejs.org/ja/download'
+      command -v npm >/dev/null 2>&1 || show_codex_node_guide
       npm install -g @openai/codex
       ;;
     claude-code) download_and_run 'https://claude.ai/install.sh' ;;

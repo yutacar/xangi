@@ -89,6 +89,8 @@ export interface DetectedBackend extends GuidedBackend {
 
 export interface DetectBackendsOptions {
   pathEnv?: string;
+  homeDir?: string;
+  env?: NodeJS.ProcessEnv;
   canExecute?: (path: string) => Promise<boolean>;
   version?: (command: string) => string | undefined;
   authStatus?: (command: string, args: readonly string[]) => boolean;
@@ -106,7 +108,7 @@ export class SetupPrerequisiteError extends Error {
 export async function detectGuidedBackends(
   options: DetectBackendsOptions = {}
 ): Promise<DetectedBackend[]> {
-  const directories = (options.pathEnv ?? process.env.PATH ?? '').split(delimiter).filter(Boolean);
+  const directories = await backendSearchDirectories(options);
   const canExecute =
     options.canExecute ??
     (async (path: string) => {
@@ -152,6 +154,30 @@ export async function detectGuidedBackends(
     }
   }
   return detected;
+}
+
+async function backendSearchDirectories(options: DetectBackendsOptions): Promise<string[]> {
+  const env = options.env ?? process.env;
+  const directories = (options.pathEnv ?? env.PATH ?? '').split(delimiter).filter(isAbsolute);
+  if (env.NVM_BIN && isAbsolute(env.NVM_BIN)) directories.push(env.NVM_BIN);
+
+  // Supplying pathEnv makes unit tests and callers explicitly PATH-only unless a home is also given.
+  const homeDir = options.homeDir ?? (options.pathEnv === undefined ? homedir() : undefined);
+  const nvmDir =
+    env.NVM_DIR && isAbsolute(env.NVM_DIR) ? env.NVM_DIR : homeDir && join(homeDir, '.nvm');
+  if (nvmDir) {
+    try {
+      const versions = await readdir(join(nvmDir, 'versions', 'node'), { withFileTypes: true });
+      versions
+        .filter((entry) => entry.isDirectory())
+        .map((entry) => entry.name)
+        .sort((left, right) => right.localeCompare(left, undefined, { numeric: true }))
+        .forEach((version) => directories.push(join(nvmDir, 'versions', 'node', version, 'bin')));
+    } catch {
+      // NVM is optional. An unavailable NVM directory must not hide CLIs already found on PATH.
+    }
+  }
+  return [...new Set(directories)];
 }
 
 export function aiToolSetupGuide(tool = 'codex'): string {
@@ -300,7 +326,7 @@ ${workspaceFlow}
    - CLIと設定のusage: ${usagePath}
    - Discord設定: ${discordSetupPath}
    利用者が明示的に選ばない限りNotion同期はOFFのままにしてください。
-   secretやtokenをAIとの会話へ貼り付けるよう求めたり、read・printf・echoなどのshell commandを組み立てて保存させたりしないでください。Discord、Slack、LINE、Telegram、Notionのtoken設定が必要な場合は、利用者自身がTerminalで\`${options.launcherCommand} settings\`を実行し、ローカルの専用設定画面へ入力すると案内してください。Notion同期では同じ画面で親ページIDまたはURLも入力し、その後に\`${options.launcherCommand} notion-sync enable\`を実行します。workspace全体を自動検出するため、個別Markdownの相対path、同期方向、YAML manifestを質問してはいけません。
+   secretやtokenをAIとの会話へ貼り付けるよう求めたり、read・printf・echoなどのshell commandを組み立てて保存させたりしないでください。Discordの許可ユーザーID、Discord、Slack、LINE、Telegram、Notionのtoken設定が必要な場合は、利用者自身がTerminalで\`${options.launcherCommand} settings\`を実行し、ローカルの専用設定画面へ入力すると案内してください。Notion同期では同じ画面で親ページIDまたはURLも入力し、その後に\`${options.launcherCommand} notion-sync enable\`を実行します。workspace全体を自動検出するため、個別Markdownの相対path、同期方向、YAML manifestを質問してはいけません。
 ${startupFlow}
 
 任意のsoftwareを勝手にインストールしたり、署名されていないworkspace templateを取得したり、secretを表示したり、利用者の明示的な選択なしに外部連携を有効化したりしないでください。`;
@@ -358,7 +384,8 @@ async function defaultLaunchGuidedBackend(
 }
 
 export async function guidedSetupCmd(options: GuidedSetupOptions): Promise<string> {
-  const backends = await detectGuidedBackends(options);
+  const homeDir = options.homeDir ?? homedir();
+  const backends = await detectGuidedBackends({ ...options, homeDir });
   if (backends.length === 0) {
     throw new SetupPrerequisiteError(missingBackendGuide());
   }
@@ -374,7 +401,6 @@ export async function guidedSetupCmd(options: GuidedSetupOptions): Promise<strin
     throw new Error('選択したAIエージェントは事前確認で検出されていません');
   }
   await options.onSelected?.(backend);
-  const homeDir = options.homeDir ?? homedir();
   const workspaceCandidates = await detectKnownWorkspaces({
     homeDir,
     cwd: options.cwd ?? process.cwd(),

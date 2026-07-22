@@ -49,6 +49,28 @@ describe('guided setup backend preflight', () => {
     ]);
   });
 
+  it('detects Codex installed under NVM even when its bin directory is absent from PATH', async () => {
+    const { homeDir } = await fixture();
+    const olderBin = join(homeDir, '.nvm', 'versions', 'node', 'v22.16.0', 'bin');
+    const newerBin = join(homeDir, '.nvm', 'versions', 'node', 'v24.18.0', 'bin');
+    await mkdir(olderBin, { recursive: true });
+    await mkdir(newerBin, { recursive: true });
+    const newerCodex = join(newerBin, 'codex');
+
+    const detected = await detectGuidedBackends({
+      homeDir,
+      pathEnv: '/usr/bin:/bin',
+      env: {},
+      canExecute: async (path) => path === newerCodex,
+      version: (path) => (path === newerCodex ? 'codex 1.2.3' : undefined),
+      authStatus: () => true,
+    });
+
+    expect(detected).toContainEqual(
+      expect.objectContaining({ id: 'codex', executable: newerCodex, version: 'codex 1.2.3' })
+    );
+  });
+
   it('finds only known workspace locations without recursively scanning home', async () => {
     const { homeDir } = await fixture();
     const configured = join(homeDir, 'configured');

@@ -208,6 +208,35 @@ rm -f -- "$next_command_link"
 ln -s -- "$launcher" "$next_command_link"
 mv -f -- "$next_command_link" "$command_link"
 
+case ":${PATH:-}:" in
+  *":$command_dir:"*) command_on_path=1 ;;
+  *) command_on_path=0 ;;
+esac
+path_profile_updated=0
+ensure_command_path_in_profile() {
+  local profile="$1"
+  local marker='# xangi: add user commands to PATH'
+  if grep -Fqx "$marker" "$profile" 2>/dev/null; then
+    return
+  fi
+  if printf '\n%s\n%s\n' \
+    "$marker" \
+    'case ":$PATH:" in *":$HOME/.local/bin:"*) ;; *) export PATH="$HOME/.local/bin:$PATH" ;; esac' \
+    >>"$profile"; then
+    path_profile_updated=1
+  else
+    printf 'Warning: could not add %s to PATH in %s\n' "$command_dir" "$profile" >&2
+  fi
+}
+if [[ $command_on_path -eq 0 ]]; then
+  ensure_command_path_in_profile "$HOME/.profile"
+  shell_name="${SHELL:-}"
+  case "${shell_name##*/}" in
+    bash) ensure_command_path_in_profile "$HOME/.bashrc" ;;
+    zsh) ensure_command_path_in_profile "$HOME/.zshrc" ;;
+  esac
+fi
+
 # The verified application and stable command are now committed. Subsequent
 # setup/service failures remain recoverable through `xangi setup` or
 # `xangi install` and must not trigger bundle rollback.
@@ -238,10 +267,6 @@ fi
 echo "Installed xangi $RELEASE_VERSION."
 echo "Launcher: $launcher"
 echo "Command: $command_link"
-case ":${PATH:-}:" in
-  *":$command_dir:"*) command_on_path=1 ;;
-  *) command_on_path=0 ;;
-esac
 if [[ $setup_pending -eq 1 ]]; then
   echo 'xangi is installed. AI setup and service activation are pending.'
   if [[ $command_on_path -eq 1 ]]; then
@@ -262,5 +287,7 @@ if [[ $command_on_path -eq 1 ]]; then
 else
   printf 'Token settings: "%s" settings\n' "$launcher"
   printf 'Add xangi to this shell: export PATH="%s:$PATH"\n' "$command_dir"
-  printf 'For zsh, add that export line to "%s/.zshrc".\n' "$HOME"
+  if [[ $path_profile_updated -eq 1 ]]; then
+    echo 'The installer added ~/.local/bin to your shell startup files. Open a new terminal to use xangi directly.'
+  fi
 fi
