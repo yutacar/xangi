@@ -40,28 +40,25 @@ flowchart LR
 
 The same flow works on macOS, Linux, and WSL2. First prepare one supported AI tool, then install xangi.
 
-```bash
-# Example: prepare Codex (claude-code / cursor / grok / antigravity are also available)
-bash <(curl -fsSL https://github.com/karaage0703/xangi/releases/latest/download/setup-ai-tools.sh) codex
+Example: prepare Codex (`claude-code`, `cursor`, `grok`, and `antigravity` are also available)
 
-# Install xangi
+```bash
+bash <(curl -fsSL https://github.com/karaage0703/xangi/releases/latest/download/setup-ai-tools.sh) codex
+```
+
+Install xangi
+
+```bash
 curl -fsSL https://github.com/karaage0703/xangi/releases/latest/download/install.sh | bash
 ```
 
-After installation, open a normal terminal and run:
+After installation, open a new terminal and start setup:
 
 ```bash
 xangi setup
 ```
 
-The AI guiding `xangi setup` confirms the workspace and Web Chat access scope, registers and starts the OS service, and runs `xangi doctor`. You do not need to run `xangi install` or `xangi doctor` manually afterward. Automatic startup after login or reboot is asked separately and is enabled only with explicit consent. You can change it later with:
-
-```bash
-xangi service autostart enable
-xangi service autostart disable
-```
-
-Run `xangi doctor` later whenever you want to check the current state.
+Follow the questions from the AI guiding `xangi setup` to configure the workspace and Web Chat access scope.
 
 ## Detailed setup for users
 
@@ -73,7 +70,7 @@ xangi's guided setup uses Codex, Claude Code, Cursor Agent, Grok Build, or Antig
 bash <(curl -fsSL https://github.com/karaage0703/xangi/releases/latest/download/setup-ai-tools.sh) codex
 ```
 
-Replace the last argument with `codex`, `claude-code`, `cursor`, `grok`, or `antigravity`. Use `check` as the last argument to inspect installation and authentication without changing them. The script installs a missing tool using its vendor's official installer and starts interactive authentication. Codex requires Node.js and npm; if either is unavailable, the script stops and prints the prerequisite URL.
+Replace the last argument with `codex`, `claude-code`, `cursor`, `grok`, or `antigravity`. Use `check` as the last argument to inspect installation and authentication without changing them. The script installs a missing tool using its vendor's official installer and starts interactive authentication. Codex requires Node.js and npm. If either is unavailable, the script prints the full sequence for installing nvm, closing and reopening the terminal, running `nvm install --lts`, and rerunning Codex setup, then stops.
 
 ### 2. Install xangi
 
@@ -83,7 +80,7 @@ Paste the same command into a terminal on macOS, Linux, or WSL2:
 curl -fsSL https://github.com/karaage0703/xangi/releases/latest/download/install.sh | bash
 ```
 
-The installer detects the operating system and CPU, installs xangi, and creates `~/.local/bin/xangi`. It does not launch an interactive AI UI inside the `curl ... | bash` pipe. After installation, it tells you to run `xangi setup` from a normal terminal. This avoids platform-specific terminal handoff failures in TUI applications such as Codex. Run the installer from any directory. When `~/.local/bin` is not on PATH, it prints an `export PATH=...` command for the current shell and instructions for persisting it in zsh.
+The installer detects the operating system and CPU, installs xangi, and creates `~/.local/bin/xangi`. It does not launch an interactive AI UI inside the `curl ... | bash` pipe. After installation, it tells you to run `xangi setup` from a normal terminal. This avoids platform-specific terminal handoff failures in TUI applications such as Codex. Run the installer from any directory. When `~/.local/bin` is not on PATH, it adds it idempotently to the bash or zsh startup files and also prints an `export PATH=...` command for the current shell.
 
 ### Minimum flow and recovery commands
 
@@ -114,7 +111,7 @@ After setup, xangi runs as a service, so no additional start command is required
 - Discord and other chat platforms: message the bot configured during setup
 - Health check: run `xangi doctor`
 
-If the current shell still cannot find `xangi`, run the printed `export PATH=...` command or use the absolute Launcher path.
+The installer cannot change the parent shell's PATH. In the terminal that ran the installer, run the printed `export PATH=...` command or open a new terminal. The installer adds `~/.local/bin` to the bash and zsh startup files.
 
 ### Installing multiple xangi instances on one machine
 
@@ -122,15 +119,15 @@ The Gitless managed distribution currently supports one instance per OS user. Ru
 
 Named managed instances under one OS user are not supported yet. Use separate OS users for now. The multiple-clone, PM2, and Docker guidance later in this README is for source-checkout developers, not the Gitless managed distribution.
 
-### Token settings
+### Connection settings
 
-When setup needs Discord, Slack, LINE, Telegram, or Notion tokens, open the local settings page with one command:
+When setup needs Discord allowed user IDs or Discord, Slack, LINE, Telegram, or Notion tokens, open the local settings page with one command:
 
 ```bash
 xangi settings
 ```
 
-Values never enter the AI conversation or shell history. xangi stores them with mode 0600 in the OS-specific secret area. The temporary page binds only to `127.0.0.1`, never sends stored values back to the browser, and shuts down after saving.
+Values never enter the AI conversation or shell history. xangi stores them with mode 0600 in the OS-specific configuration area. The temporary page binds only to `127.0.0.1`, never sends stored values back to the browser, and shuts down after saving.
 
 ### Settings and updates
 

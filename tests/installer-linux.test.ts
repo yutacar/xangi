@@ -50,7 +50,8 @@ describe('renderSystemdUserUnit', () => {
     expect(unit).toContain(
       'ExecStart="/home/Test User/.local/share/xangi/app/current/runtime/bin/node"'
     );
-    expect(unit).toContain('WorkingDirectory="/home/Test User/.local/share/xangi/app/current"');
+    expect(unit).toContain('WorkingDirectory=/home/Test\\x20User/.local/share/xangi/app/current');
+    expect(unit).not.toContain('WorkingDirectory="');
     expect(unit).toContain('Environment="PATH=/home/Test User/.local/bin:/usr/bin:/bin"');
     expect(unit).toContain('Restart=always');
     expect(unit).toContain('WantedBy=default.target');
@@ -63,6 +64,9 @@ describe('renderSystemdUserUnit', () => {
     expect(() =>
       renderSystemdUserUnit({ ...fixture('/tmp'), configPath: '/tmp/config\nother' })
     ).toThrow(/control/i);
+    expect(() =>
+      renderSystemdUserUnit({ ...fixture('/tmp'), workingDirectory: 'relative/path' })
+    ).toThrow(/absolute/i);
   });
 });
 
