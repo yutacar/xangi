@@ -7,6 +7,7 @@ import type { Scheduler } from './scheduler.js';
 import { runWithBubbleEvents } from './bubble-events-runner.js';
 import { listenHttpServer } from './http-server-startup.js';
 import { StreamSession, type StreamView } from './stream-session.js';
+import { TelegramDraftPreview, isUnsupportedTelegramDraftError } from './telegram-draft.js';
 import {
   ensureSession,
   archiveSession,
@@ -950,6 +951,7 @@ export async function startTelegramBot(opts: {
 }): Promise<void> {
   const { config, agentRunner, resolver, scheduler } = opts;
   const tcfg = config.telegram;
+  let draftSupported = true;
 
   if (!tcfg.enabled || !tcfg.botToken) {
     return;
@@ -1509,6 +1511,10 @@ export async function startTelegramBot(opts: {
 
     const appSessionId = ensureSession(contextKey, { platform: 'telegram' });
     const showThinking = tcfg.showThinking !== false;
+    const useDraft =
+      draftSupported &&
+      tcfg.streamMode !== 'edit' &&
+      shouldStreamTelegramResponse(chatType, showThinking, tcfg.streaming !== false);
     const threadLabel =
       chatType === 'private'
         ? `Telegram DM (${from.username || from.first_name})${message.message_thread_id === undefined ? '' : ` / Topic ${message.message_thread_id}`}`
@@ -1517,7 +1523,7 @@ export async function startTelegramBot(opts: {
     // showThinking=true: 「考え中...」を先に送ってから編集するモード
     // showThinking=false: typing アクションのみ。最終回答は新規メッセージとして送信
     let replyMsg: Awaited<ReturnType<typeof ctx.reply>> | null = null;
-    if (showThinking) {
+    if (showThinking && !useDraft) {
       try {
         replyMsg = await ctx.reply('考え中...');
       } catch (err) {
@@ -1526,7 +1532,7 @@ export async function startTelegramBot(opts: {
         );
         return;
       }
-    } else {
+    } else if (!showThinking) {
       ctx.api.sendChatAction(message.chat.id, 'typing').catch(() => {});
     }
 
@@ -1553,33 +1559,61 @@ export async function startTelegramBot(opts: {
     );
 
     let streamSession: StreamSession | null = null;
+    let draftPreview: TelegramDraftPreview | null = null;
     let streamSessionFinished = false;
     let streamEditsPaused = false;
     let unregisterFinalizer = () => {};
     const finishStreamSession = () => {
+      draftPreview?.stop();
       if (!streamSession || streamSessionFinished) return;
       streamSession.finish();
       streamSessionFinished = true;
     };
-    if (capturedReplyMsg) {
-      const capturedMsg = capturedReplyMsg;
+    if (capturedReplyMsg || useDraft) {
       unregisterFinalizer = registerStreamFinalizer(async () => {
         finishStreamSession();
         const note = '⏸ プロセス再起動により中断されました';
+        if (!capturedReplyMsg) {
+          await ctx
+            .reply(note, {
+              ...(message.message_thread_id === undefined
+                ? {}
+                : { message_thread_id: message.message_thread_id }),
+            })
+            .catch(() => {});
+          return;
+        }
         const view = streamSession?.view();
         const body = view?.text ? `${view.text.trimEnd()}\n\n${note}` : note;
         await ctx.api
-          .editMessageText(capturedMsg.chat.id, capturedMsg.message_id, truncateSafe(body, 4096))
+          .editMessageText(
+            capturedReplyMsg.chat.id,
+            capturedReplyMsg.message_id,
+            truncateSafe(body, 4096)
+          )
           .catch(() => {});
       });
     }
 
+    let interruptionNotified = false;
     const markInterrupted = async () => {
-      if (!capturedReplyMsg) return;
+      if (interruptionNotified || (!capturedReplyMsg && !useDraft)) return;
+      interruptionNotified = true;
+      draftPreview?.stop();
       const messageText =
         getInterruptionReason(contextKey, currentGen) === 'stop'
           ? '処理を停止しました。'
           : 'セッションがリセットされました。';
+      if (!capturedReplyMsg) {
+        await ctx
+          .reply(messageText, {
+            ...(message.message_thread_id === undefined
+              ? {}
+              : { message_thread_id: message.message_thread_id }),
+          })
+          .catch(() => {});
+        return;
+      }
       await ctx.api
         .editMessageText(capturedReplyMsg.chat.id, capturedReplyMsg.message_id, messageText)
         .catch(() => {});
@@ -1594,7 +1628,8 @@ export async function startTelegramBot(opts: {
       }
 
       const render = async (view: StreamView) => {
-        if (!capturedReplyMsg || streamEditsPaused) return;
+        if ((!capturedReplyMsg && !draftPreview) || streamEditsPaused) return;
+        if (getGeneration(contextKey) !== currentGen) return;
 
         const toolPart = view.toolLines.length > 0 ? '\n' + view.toolLines.join('\n') : '';
         let displayText: string;
@@ -1608,6 +1643,12 @@ export async function startTelegramBot(opts: {
         if (!displayText.trim()) {
           displayText = '考え中...';
         }
+
+        if (draftPreview) {
+          await draftPreview.update(truncateSafe(displayText, 4000));
+          return;
+        }
+        if (!capturedReplyMsg) return;
 
         const editResult = await retryTelegramEdit(
           () =>
@@ -1628,6 +1669,19 @@ export async function startTelegramBot(opts: {
       };
 
       if (shouldStreamTelegramResponse(chatType, showThinking, tcfg.streaming !== false)) {
+        if (useDraft) {
+          draftPreview = new TelegramDraftPreview(
+            ctx.api,
+            message.chat.id,
+            message.message_thread_id,
+            () => getGeneration(contextKey) === currentGen,
+            (error) => {
+              if (isUnsupportedTelegramDraftError(error)) draftSupported = false;
+              console.warn('[xangi-telegram] Draft preview stopped: ' + formatTelegramError(error));
+            }
+          );
+          draftPreview.start();
+        }
         streamSession = new StreamSession({
           render,
           tickMs: 1000,

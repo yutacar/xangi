@@ -122,6 +122,7 @@ TELEGRAM_WEBHOOK_SECRET_TOKEN=replace-with-a-random-secret
 TELEGRAM_STREAMING=true
 TELEGRAM_SHOW_THINKING=true
 TELEGRAM_FORMAT=html                         # html | plain。最終回答のみ整形
+TELEGRAM_STREAM_MODE=draft                   # draft | edit。DMの途中表示
 
 # Optional: Session 境界
 TELEGRAM_IDLE_RESET_ENABLED=true

@@ -228,6 +228,7 @@ export interface Config {
     streaming?: boolean;
     showThinking?: boolean;
     format?: 'html' | 'plain';
+    streamMode?: 'draft' | 'edit';
     allowedBotsMaxConsecutive?: number;
     replyToMentionInGroup?: boolean;
     idleResetEnabled?: boolean;
@@ -512,6 +513,7 @@ export function loadConfig(): Config {
       streaming: process.env.TELEGRAM_STREAMING !== 'false',
       showThinking: process.env.TELEGRAM_SHOW_THINKING !== 'false',
       format: v.enumOf('TELEGRAM_FORMAT', ['html', 'plain'] as const, 'html'),
+      streamMode: v.enumOf('TELEGRAM_STREAM_MODE', ['draft', 'edit'] as const, 'draft'),
       allowedBotsMaxConsecutive: v.int('TELEGRAM_ALLOWED_BOTS_MAX_CONSECUTIVE', 3),
       replyToMentionInGroup: process.env.TELEGRAM_REPLY_TO_MENTION_IN_GROUP !== 'false',
       idleResetEnabled: process.env.TELEGRAM_IDLE_RESET_ENABLED !== 'false',
